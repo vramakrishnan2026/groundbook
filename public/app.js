@@ -1,4 +1,20 @@
 // GroundBook web app — customer, owner and helper screens. Plain JavaScript, no build step.
+import qrcode from './vendor/qrcode.js';
+
+// QR code as a PNG data URL, drawn locally (no third-party service sees the data).
+function qrPng(text, scale = 8, margin = 4) {
+  const q = qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  const n = q.getModuleCount(), size = (n + margin * 2) * scale;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (q.isDark(r, col)) ctx.fillRect((col + margin) * scale, (r + margin) * scale, scale, scale);
+  return c.toDataURL('image/png');
+}
 
 // ---------------------------------------------------------------- helpers
 class Raw { constructor(s) { this.s = s; } toString() { return this.s; } }
@@ -372,6 +388,8 @@ function payPage(token, data) {
   const b = data.booking, g = data.ground, p = data.payment;
   const skew = b.serverNow - Date.now();
   const upi = p.upiId ? `upi://pay?pa=${p.upiId}&pn=${encodeURIComponent(p.upiName)}&am=${b.amount}.00&cu=INR&tn=${encodeURIComponent(b.ref)}` : null;
+  // The QR holds the same payment details; scanning a QR is always allowed by UPI apps.
+  const qrSrc = upi ? qrPng(upi) : null;
   let file = null;
   render(h`<div class="screen">
     ${topbar('Payment', `/g/${g.slug}`)}
@@ -382,9 +400,24 @@ function payPage(token, data) {
         <div class="small muted">${fmtDate(b.date)} · ${hourLabel(b.hour)} · ${b.unit.name}</div></div>
       <div class="card">
         <div class="row gap12"><div class="circle soft" style="width:32px;height:32px">1</div><div class="strong">Pay ${money(b.amount)} by UPI</div></div>
-        ${p.upiId ? h`<div class="upi-box"><div class="col" style="gap:0;min-width:0"><span class="caption muted">UPI ID</span><span class="small strong" style="overflow-wrap:anywhere">${p.upiId}</span></div><button type="button" class="link" data-act="copyUpi">Copy</button></div>
-        <div class="row gap12"><a class="btn primary grow" href="${upi}">Open UPI app</a>${p.qrUrl ? h`<button type="button" class="iconbtn" style="width:52px;height:52px;border-radius:16px;background:var(--bg);border:1.5px solid var(--border)" aria-label="Show QR code" data-act="qr">${icon('qr', 22)}</button>` : ''}</div>
-        <p class="caption muted" style="letter-spacing:0">On a computer? Scan the QR code with your phone's UPI app instead.</p>`
+        ${p.upiId ? h`
+        <div class="upi-box"><div class="col" style="gap:0;min-width:0"><span class="caption muted">UPI ID</span><span class="small strong" style="overflow-wrap:anywhere">${p.upiId}</span><span class="caption muted" style="letter-spacing:0">${p.upiName}</span></div></div>
+        <button type="button" class="btn primary" data-act="copyUpi">${icon('copy', 18)} Copy UPI ID</button>
+        <ol class="steps small">
+          <li>Open Google Pay, PhonePe, Paytm or your bank's UPI app.</li>
+          <li>Tap <b>Pay to UPI ID</b> (or <b>Pay anyone</b>) and paste the UPI ID.</li>
+          <li>Pay <b>${money(b.amount)}</b>. In the note, you can add <b>${b.ref}</b>.</li>
+          <li>Come back to this page for step 2.</li>
+        </ol>
+        <div class="divider"></div>
+        <div class="col" style="align-items:center;gap:8px">
+          <div class="small strong">Or scan this QR code</div>
+          <img class="qr-img" src="${qrSrc}" alt="UPI QR code to pay ${money(b.amount)} to ${p.upiName}">
+          <p class="caption muted center" style="letter-spacing:0">Scan it from another phone. On this phone, save the QR, then in your UPI app tap <b>Scan</b> and choose it from your gallery.</p>
+          <a class="btn secondary" href="${qrSrc}" download="pay-${b.ref}.png">Save QR to gallery</a>
+        </div>
+        <a class="link center" href="${upi}">Try one-tap payment (doesn't work with every UPI ID)</a>`
+        : p.qrUrl ? h`<img class="qr-img" src="${p.qrUrl}" alt="UPI QR code"><p class="caption muted center" style="letter-spacing:0">Scan this QR and pay ${money(b.amount)}.</p>`
         : h`<div class="banner grey">The ground hasn't added a UPI ID yet. Please call them to pay.</div>`}
       </div>
       <div class="card">
@@ -401,8 +434,7 @@ function payPage(token, data) {
       <div class="caption muted center" style="letter-spacing:0">The owner checks the payment and confirms your booking.</div></div>
   </div>`, {
     actions: {
-      copyUpi: () => copy(p.upiId, 'UPI ID copied'),
-      qr: () => openSheet(h`<div class="heading center">Scan to pay ${money(b.amount)}</div><img class="qr-img" src="${p.qrUrl}" alt="UPI QR code"><div class="small muted center">Enter ${money(b.amount)} in your UPI app, then come back to this page.</div><button class="btn secondary" data-act="close">Done</button>`, { close: closeSheet }),
+      copyUpi: () => copy(p.upiId, 'UPI ID copied. Now open your UPI app and pay to this ID.'),
       cancel: async () => {
         if (!confirm('Cancel this booking and release the slot?')) return;
         await api('POST', `/api/b/${token}/cancel`).catch((e) => toast(e.message));
@@ -644,7 +676,7 @@ async function ownerSettings() {
   const s = await api('GET', '/api/owner/settings');
   const g = s.ground;
   const link = `${location.origin}/g/${g.slug}`;
-  const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=16&data=${encodeURIComponent(link)}`;
+  const qrImg = qrPng(link, 12, 4);
   const hours = Array.from({ length: 25 }, (_, i) => i);
   render(h`<div class="screen">
     <div class="content tight" style="padding-top:20px">
@@ -653,7 +685,7 @@ async function ownerSettings() {
       <div class="card"><div class="heading">Your booking link</div>
         <img src="${qrImg}" alt="QR code for ${link}" style="width:180px;margin:0 auto" loading="lazy">
         <div class="upi-box"><span class="small strong" style="overflow-wrap:anywhere">${link}</span><button class="link" data-act="copyLink">Copy</button></div>
-        <div class="btn-row"><a class="btn secondary" href="${qrImg}" target="_blank" rel="noopener">Open QR to print</a><a class="btn soft" href="/g/${g.slug}" target="_blank">View page</a></div></div>
+        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR to print</a><a class="btn soft" href="/g/${g.slug}" target="_blank">View page</a></div></div>
 
       <form class="card" data-form="prices"><div class="heading">Price per hour</div>
         <div class="price-table"><div></div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>

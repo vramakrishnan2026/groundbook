@@ -97,7 +97,7 @@ The Cloudflare account is connected to this repo (Workers → *groundbook* → S
    - Add the UPI ID and upload the UPI QR image. A free business UPI such as PhonePe Business is the most reliable.
    - Add photos, the Google Maps link and facilities.
    - Add the helper with a PIN.
-   - Use **Open QR to print** to print the booking QR code for the ground.
+   - Use **Download QR to print** to print the booking QR code for the ground.
 
    Tip: on the owner's and helper's phones, use the browser's *Add to Home screen* option so it opens like an app.
 
