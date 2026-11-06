@@ -6,9 +6,9 @@ import {
   HttpError, addDays, bad, cleanName, cleanPhone, cleanPin, cleanText, dayType, hashPin, hourLabel,
   int, isDate, json, localNow, mondayOf, readJson, verifyPin,
 } from '../lib/util.js';
+import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { groundPublic, photoUrls, serveObject } from './public.js';
 
-const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
 async function bookingFor(db, me, id) {
   const b = await db.prepare('SELECT * FROM bookings WHERE id = ? AND ground_id = ?').bind(int(id, 'booking'), me.ground_id).first();
@@ -280,7 +280,7 @@ async function readImage(request) {
   const type = request.headers.get('content-type') || '';
   if (!/^image\/(jpeg|png|webp)$/.test(type)) throw bad('Upload a JPG, PNG or WebP image');
   const buf = await request.arrayBuffer();
-  if (!buf.byteLength || buf.byteLength > MAX_IMAGE_BYTES) throw bad('That image is too large');
+  if (!buf.byteLength || buf.byteLength > MAX_FILE_BYTES) throw bad('That image is too large');
   return { buf, type };
 }
 
@@ -290,7 +290,7 @@ export async function addPhoto(env, me, request) {
   const count = await db.prepare('SELECT COUNT(*) AS n FROM photos WHERE ground_id = ?').bind(me.ground_id).first();
   if (count.n >= 10) throw bad('You can have up to 10 photos. Delete one first.');
   const key = `photos/${me.ground_id}/${crypto.randomUUID()}`;
-  await env.FILES.put(key, buf, { httpMetadata: { contentType: type } });
+  await files(env).put(key, buf, { contentType: type });
   await db
     .prepare('INSERT INTO photos (ground_id, r2_key, sort, created_at) VALUES (?,?,?,?)')
     .bind(me.ground_id, key, count.n, Date.now())
@@ -302,7 +302,7 @@ export async function deletePhoto(env, me, id) {
   const db = env.DB;
   const p = await db.prepare('SELECT * FROM photos WHERE id = ? AND ground_id = ?').bind(int(id, 'photo'), me.ground_id).first();
   if (!p) throw new HttpError(404, 'Photo not found');
-  await env.FILES.delete(p.r2_key);
+  await files(env).delete(p.r2_key);
   await db.prepare('DELETE FROM photos WHERE id = ?').bind(p.id).run();
   return getSettings(env, me);
 }
@@ -311,8 +311,8 @@ export async function setQr(env, me, request) {
   const { buf, type } = await readImage(request);
   const g = await groundById(env.DB, me.ground_id);
   const key = `qr/${g.id}/${crypto.randomUUID()}`;
-  await env.FILES.put(key, buf, { httpMetadata: { contentType: type } });
-  if (g.upi_qr_key) await env.FILES.delete(g.upi_qr_key);
+  await files(env).put(key, buf, { contentType: type });
+  if (g.upi_qr_key) await files(env).delete(g.upi_qr_key);
   await env.DB.prepare('UPDATE grounds SET upi_qr_key = ? WHERE id = ?').bind(key, g.id).run();
   return getSettings(env, me);
 }

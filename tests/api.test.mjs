@@ -14,7 +14,7 @@ function client(env) {
   const call = async (method, path, body, { ip = '1.1.1.1', headers = {} } = {}) => {
     const init = { method, headers: { 'cf-connecting-ip': ip, ...headers } };
     if (cookie) init.headers.cookie = cookie;
-    if (body instanceof FormData) init.body = body;
+    if (body instanceof FormData || body instanceof Blob) init.body = body;
     else if (body !== undefined) {
       init.body = JSON.stringify(body);
       init.headers['content-type'] = 'application/json';
@@ -216,4 +216,22 @@ test('customer can cancel a hold but not a confirmed booking', async () => {
   assert.equal((await c.call('POST', `/api/b/${t}/cancel`)).body.booking.status, 'CANCELLED');
   const slots = (await c.call('GET', `/api/g/demo/slots?date=${tomorrow}`)).body;
   assert.equal(slots.hours.find((x) => x.hour === 12).units[FULL], 'free');
+});
+
+test('images are stored in D1 and come back byte-for-byte; oversized images are refused', async () => {
+  const { env, c } = await setup();
+  const o = client(env);
+  await o.login('9847012345', '1234');
+  const bytes = new Uint8Array(300_000).map((_, i) => (i * 31) % 256);
+  const up = await o.call('POST', '/api/owner/photos', new Blob([bytes], { type: 'image/jpeg' }), { headers: { 'content-type': 'image/jpeg' } });
+  assert.equal(up.status, 200);
+  assert.equal(up.body.photos.length, 1);
+  const got = await c.call('GET', up.body.photos[0].url);
+  assert.equal(got.status, 200);
+  assert.deepEqual(new Uint8Array(got.body), bytes);
+  const big = await o.call('POST', '/api/owner/photos', new Blob([new Uint8Array(1_500_000)], { type: 'image/jpeg' }), { headers: { 'content-type': 'image/jpeg' } });
+  assert.equal(big.status, 400);
+  const del = await o.call('DELETE', `/api/owner/photos/${up.body.photos[0].id}`);
+  assert.equal(del.body.photos.length, 0);
+  assert.equal((await c.call('GET', up.body.photos[0].url)).status, 404);
 });

@@ -1,4 +1,4 @@
-// Local stand-ins for Cloudflare D1 (SQLite via node:sqlite) and R2 (a folder on disk),
+// Local stand-in for Cloudflare D1 (SQLite via node:sqlite),
 // so the Worker can be run and tested without a Cloudflare account.
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
@@ -54,27 +54,6 @@ export class LocalD1 {
   }
   async exec(sql) {
     this.db.exec(sql);
-  }
-}
-
-export class LocalR2 {
-  constructor(dir) {
-    this.dir = dir;
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  _p(key) {
-    return path.join(this.dir, encodeURIComponent(key));
-  }
-  async put(key, data, opts = {}) {
-    fs.writeFileSync(this._p(key), Buffer.from(data instanceof ArrayBuffer ? new Uint8Array(data) : data));
-    fs.writeFileSync(this._p(key) + '.meta', JSON.stringify(opts.httpMetadata || {}));
-  }
-  async get(key) {
-    if (!fs.existsSync(this._p(key))) return null;
-    return { body: fs.readFileSync(this._p(key)), httpMetadata: JSON.parse(fs.readFileSync(this._p(key) + '.meta', 'utf8')) };
-  }
-  async delete(key) {
-    for (const f of [this._p(key), this._p(key) + '.meta']) if (fs.existsSync(f)) fs.unlinkSync(f);
   }
 }
 

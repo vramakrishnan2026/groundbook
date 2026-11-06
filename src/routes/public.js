@@ -3,11 +3,11 @@ import {
   ACTIVE, availability, bookableDates, closeBooking, groundBySlug, hoursOf, insertBooking,
   isPastSlot, priceFor, publicBooking, sweepExpired, unitsWithPrices,
 } from '../lib/bookings.js';
+import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { HttpError, bad, cleanName, cleanPhone, cleanUtr, dayType, int, isDate, json, readJson } from '../lib/util.js';
 
 const MAX_HOLDS_PER_PHONE = 2;
 const MAX_HOLDS_PER_IP = 4;
-const MAX_PROOF_BYTES = 6 * 1024 * 1024;
 
 export async function photoUrls(db, groundId) {
   const { results } = await db
@@ -142,9 +142,9 @@ export async function submitProof(env, token, request) {
   const file = form.get('screenshot');
   if (file && typeof file === 'object' && file.size > 0) {
     if (!/^image\//.test(file.type || '')) throw bad('Please upload an image of the payment', 'screenshot');
-    if (file.size > MAX_PROOF_BYTES) throw bad('That image is too large', 'screenshot');
+    if (file.size > MAX_FILE_BYTES) throw bad('That image is too large. Please try again.', 'screenshot');
     proofKey = `proofs/${b.ground_id}/${b.token}`;
-    await env.FILES.put(proofKey, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+    await files(env).put(proofKey, await file.arrayBuffer(), { contentType: file.type });
   }
   const res = await db
     .prepare(
@@ -177,11 +177,11 @@ export async function serveQr(env, slug) {
 }
 
 export async function serveObject(env, key, cache) {
-  const obj = await env.FILES.get(key);
+  const obj = await files(env).get(key);
   if (!obj) throw new HttpError(404, 'Not found');
   return new Response(obj.body, {
     headers: {
-      'content-type': (obj.httpMetadata && obj.httpMetadata.contentType) || 'application/octet-stream',
+      'content-type': obj.contentType || 'application/octet-stream',
       'cache-control': cache,
       'x-content-type-options': 'nosniff',
     },

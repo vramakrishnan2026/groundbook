@@ -10,7 +10,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { LocalD1, LocalR2, migrate } from './local.mjs';
+import { LocalD1, migrate } from './local.mjs';
 import { handleApi } from '../src/worker.js';
 import { hashPin } from '../src/lib/util.js';
 
@@ -20,7 +20,6 @@ const port = Number(process.env.PORT || 8787);
 export async function makeEnv({ seed = true } = {}) {
   const DB = new LocalD1(':memory:');
   migrate(DB, root);
-  const FILES = new LocalR2(fs.mkdtempSync('/tmp/groundbook-files-'));
   if (seed) {
     const sql = execFileSync(process.execPath, [
       path.join(root, 'scripts/new-ground.mjs'),
@@ -33,7 +32,7 @@ export async function makeEnv({ seed = true } = {}) {
     DB.db.exec(`INSERT INTO staff (ground_id, role, name, phone, pin_hash, created_at)
       VALUES (1, 'helper', 'Manoj', '9946055321', '${await hashPin('1111')}', ${Date.now()})`);
   }
-  return { DB, FILES };
+  return { DB };
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };

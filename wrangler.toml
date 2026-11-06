@@ -10,7 +10,7 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = true
 
-# Bookings, grounds, prices, staff. Create with:  npx wrangler d1 create groundbook
+# Bookings, grounds, prices, staff, and the photos / screenshots (no R2 needed). Create with:  npx wrangler d1 create groundbook
 # then paste the database_id it prints below.
 [[d1_databases]]
 binding = "DB"
@@ -18,10 +18,6 @@ database_name = "groundbook"
 database_id = "7053dd1b-7f05-4f15-9013-a843a6b1fba8"
 migrations_dir = "migrations"
 
-# Photos, UPI QR codes and payment screenshots. Create with:  npx wrangler r2 bucket create groundbook-files
-[[r2_buckets]]
-binding = "FILES"
-bucket_name = "groundbook-files"
 
 # Release expired 30-minute holds every 5 minutes (also done on every request).
 [triggers]

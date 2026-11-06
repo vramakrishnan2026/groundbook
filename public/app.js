@@ -86,14 +86,20 @@ function openSheet(content, handlers = {}) {
 }
 const closeSheet = () => document.querySelector('.scrim')?.remove();
 
+// Resize on the phone so uploads stay small (the server accepts up to 1.4 MB per image).
 async function compressImage(file, max = 1600, quality = 0.82) {
   try {
     const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-    return await new Promise((r) => c.toBlob((b) => r(b || file), 'image/jpeg', quality));
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', quality));
+      if (blob && blob.size <= 1_200_000) return blob;
+      max = Math.round(max * 0.75); quality = Math.max(0.5, quality - 0.1);
+    }
+    return file;
   } catch { return file; }
 }
 
