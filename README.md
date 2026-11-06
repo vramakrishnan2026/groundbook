@@ -26,7 +26,7 @@ Built to run many grounds from one setup. Each ground has its own page at `/g/<s
 - **D1 (SQLite):** stores grounds, courts, prices, staff, bookings, sessions and images. Schema: `migrations/0001_init.sql`.
 - **Images in D1 too:** ground photos, UPI QR images and payment screenshots are resized on the phone, to about 200–400 KB, and stored in a `files` table. That means no R2 bucket and no card on file. D1's free 5 GB holds thousands of images.
 - **Frontend:** plain HTML, CSS and JavaScript in `public/`, with no build step. Design matches the Figma file *Ground Booking App – Screens*.
-- **No runtime dependencies.** The only dev dependency is `wrangler`, the Cloudflare command-line tool.
+- **No runtime dependencies.** The only dev dependency is `wrangler`, the Cloudflare command-line tool. QR codes are drawn in the browser with the bundled `public/vendor/qrcode.js` (MIT).
 
 ```
 src/worker.js          routes + cron (releases expired holds every 5 min)
@@ -111,6 +111,23 @@ The Cloudflare account is connected to this repo (Workers → *groundbook* → S
 
 The Cloudflare free tier covers a single ground comfortably: 100,000 requests a day and 5 GB of D1 storage. The Workers Paid plan (USD 5/month) only becomes worth it with many grounds.
 
+## Razorpay (optional, per ground)
+
+Owners can switch on automatic payments in **Settings → Automatic payments (Razorpay)**. The setup steps are shown right there. Customers then tap **Pay**, approve in their UPI app, and the booking confirms by itself. The UPI + screenshot method stays available as a fallback.
+
+**One-time server setup (you, not the owner).** The owner's Razorpay Key Secret is stored encrypted, so the Worker needs its own encryption key:
+1. Cloudflare dashboard → *Workers & Pages → groundbook → Settings → Variables and Secrets → Add*.
+2. Type **Secret**, name `SECRETS_KEY`, value: any long random text (40+ characters). Save it.
+3. **Don't change or delete this value later.** If you do, every connected owner has to reconnect Razorpay.
+
+**How a payment is confirmed:**
+- The server creates a Razorpay order for the exact booking amount.
+- After payment it checks the signature *and* asks Razorpay's API that the payment is captured for that order and amount. Payments that are only authorised get captured.
+- If the customer closes the page after paying, the booking page and the 5-minute cron check Razorpay and confirm anyway.
+- If someone pays after their hold ran out and the slot was taken meanwhile, the booking is flagged **Refund needed** on the owner's Today screen. The owner refunds from the Razorpay dashboard and taps **Done**.
+
+Each owner uses their own Razorpay account, so money never passes through you.
+
 ## Security notes
 
 - Customers have no account. Each booking has a long secret link (`/b/<token>`) that only they receive.
@@ -121,7 +138,6 @@ The Cloudflare free tier covers a single ground comfortably: 100,000 requests a 
 
 ## Not built yet
 
-- Razorpay (automatic payment confirmation) as an option per ground.
 - Automatic WhatsApp or SMS messages. For now, the owner gets a one-tap "Tell them on WhatsApp" button after approving or rejecting.
 - Self-service sign-up for new grounds. Grounds are added with `scripts/new-ground.mjs`.
 - Bookings longer than one hour in a single step. Customers book consecutive hours one at a time.

@@ -7,6 +7,7 @@ import {
   int, isDate, json, localNow, mondayOf, readJson, verifyPin,
 } from '../lib/util.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
+import { checkKeys, encryptSecret, keyMode } from '../lib/razorpay.js';
 import { groundPublic, photoUrls, serveObject } from './public.js';
 
 
@@ -16,7 +17,7 @@ async function bookingFor(db, me, id) {
   return b;
 }
 
-const ownerView = (b, units) => ({ id: b.id, ...publicBooking(b, units), hasProof: !!b.proof_key, createdAt: b.created_at, proofAt: b.proof_at });
+const ownerView = (b, units) => ({ id: b.id, ...publicBooking(b, units), hasProof: !!b.proof_key, createdAt: b.created_at, proofAt: b.proof_at, rzpPaymentId: b.rzp_payment_id || null });
 
 // ---------- shared ----------
 export async function me(env, me) {
@@ -32,7 +33,7 @@ export async function today(env, me) {
   const units = await unitsWithPrices(db, g.id);
   const now = localNow(g.tz_offset_min);
   const weekStart = mondayOf(now.date);
-  const [todayRows, pending, week] = await Promise.all([
+  const [todayRows, pending, week, refunds] = await Promise.all([
     db.prepare(
       `SELECT * FROM bookings WHERE ground_id = ? AND date = ? AND status = 'CONFIRMED' AND kind <> 'block' ORDER BY start_hour`
     ).bind(g.id, now.date).all(),
@@ -41,6 +42,7 @@ export async function today(env, me) {
       `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n FROM bookings
         WHERE ground_id = ? AND status = 'CONFIRMED' AND kind <> 'block' AND date BETWEEN ? AND ?`
     ).bind(g.id, weekStart, addDays(weekStart, 6)).first(),
+    db.prepare(`SELECT * FROM bookings WHERE ground_id = ? AND refund_needed = 1 ORDER BY created_at`).bind(g.id).all(),
   ]);
   return json({
     date: now.date,
@@ -49,6 +51,7 @@ export async function today(env, me) {
     weekTotal: week.total,
     weekCount: week.n,
     pending: pending.results.map((b) => ownerView(b, units)),
+    refunds: refunds.results.map((b) => ownerView(b, units)),
     today: todayRows.results.map((b) => ownerView(b, units)),
   });
 }
@@ -84,7 +87,7 @@ export async function approve(env, me, id) {
   await sweepExpired(db);
   const b = await bookingFor(db, me, id);
   const res = await db
-    .prepare(`UPDATE bookings SET status = 'CONFIRMED', decided_at = ?, decided_by = ? WHERE id = ? AND status IN ('PENDING','HOLD')`)
+    .prepare(`UPDATE bookings SET status = 'CONFIRMED', paid_via = COALESCE(paid_via, 'upi'), decided_at = ?, decided_by = ? WHERE id = ? AND status IN ('PENDING','HOLD')`)
     .bind(Date.now(), me.id, b.id)
     .run();
   if (!res.meta.changes) throw new HttpError(409, statusMessage(b.status), 'not_pending');
@@ -178,6 +181,7 @@ export async function addSlot(env, me, request) {
     const listPrice = dayType(date) === 'weekend' ? unit.weekend : unit.weekday;
     b.amount = body.amount === undefined || body.amount === '' ? listPrice : int(body.amount, 'amount');
     if (b.amount < 0) throw bad('Amount looks wrong');
+    b.paidVia = 'cash';
     b.note = cleanText(body.note, 140);
   } else {
     b.note = cleanText(body.note, 140) || 'Closed';
@@ -207,7 +211,46 @@ export async function getSettings(env, me) {
     units: units.map(({ id, name, subtitle, weekday, weekend }) => ({ id, name, subtitle, weekday, weekend })),
     photos: await photoUrls(db, g.id),
     helpers,
+    razorpay: {
+      connected: !!(g.rzp_key_id && g.rzp_key_secret_enc),
+      enabled: !!g.rzp_enabled,
+      keyId: g.rzp_key_id || '',
+      mode: g.rzp_key_id ? keyMode(g.rzp_key_id) : null,
+    },
   });
+}
+
+// Connect, switch on/off, or disconnect Razorpay for this ground.
+export async function saveRazorpay(env, me, request) {
+  const db = env.DB;
+  const body = await readJson(request);
+  const g = await groundById(db, me.ground_id);
+  const keyId = cleanText(body.keyId, 60);
+  const keySecret = String(body.keySecret || '').trim();
+  if (keyId || keySecret) {
+    if (!/^rzp_(test|live)_[A-Za-z0-9]{6,}$/.test(keyId)) throw bad('The Key ID starts with rzp_live_ or rzp_test_', 'keyId');
+    if (!/^[A-Za-z0-9]{10,}$/.test(keySecret)) throw bad('Paste the Key Secret exactly as Razorpay shows it', 'keySecret');
+    await checkKeys(env, keyId, keySecret);
+    await db
+      .prepare('UPDATE grounds SET rzp_key_id = ?, rzp_key_secret_enc = ?, rzp_enabled = ? WHERE id = ?')
+      .bind(keyId, await encryptSecret(env, keySecret), body.enabled === false ? 0 : 1, g.id)
+      .run();
+  } else if (typeof body.enabled === 'boolean') {
+    if (body.enabled && !(g.rzp_key_id && g.rzp_key_secret_enc)) throw bad('Connect your Razorpay keys first');
+    await db.prepare('UPDATE grounds SET rzp_enabled = ? WHERE id = ?').bind(body.enabled ? 1 : 0, g.id).run();
+  }
+  return getSettings(env, me);
+}
+
+export async function disconnectRazorpay(env, me) {
+  await env.DB.prepare('UPDATE grounds SET rzp_key_id = NULL, rzp_key_secret_enc = NULL, rzp_enabled = 0 WHERE id = ?').bind(me.ground_id).run();
+  return getSettings(env, me);
+}
+
+export async function markRefunded(env, me, id) {
+  const b = await bookingFor(env.DB, me, id);
+  await env.DB.prepare(`UPDATE bookings SET refund_needed = 0, note = 'Refunded' WHERE id = ?`).bind(b.id).run();
+  return getOne(env, me, id);
 }
 
 export async function saveSettings(env, me, request) {

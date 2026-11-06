@@ -2,6 +2,7 @@
 // Static files (the app) are served by Workers Assets; everything under /api comes here.
 import { login, logout, requireStaff } from './lib/auth.js';
 import { sweepExpired } from './lib/bookings.js';
+import { reconcileRecent } from './lib/razorpay.js';
 import { HttpError, json, readJson } from './lib/util.js';
 import * as pub from './routes/public.js';
 import * as st from './routes/staff.js';
@@ -16,6 +17,8 @@ const routes = [
   ['POST', '/api/g/:slug/bookings', (env, req, url, p) => pub.createHold(env, p.slug, req)],
   ['GET', '/api/b/:token', (env, req, url, p) => pub.getBooking(env, p.token)],
   ['POST', '/api/b/:token/proof', (env, req, url, p) => pub.submitProof(env, p.token, req)],
+  ['POST', '/api/b/:token/razorpay-order', (env, req, url, p) => pub.razorpayOrder(env, p.token)],
+  ['POST', '/api/b/:token/razorpay-verify', (env, req, url, p) => pub.razorpayVerify(env, p.token, req)],
   ['POST', '/api/b/:token/cancel', (env, req, url, p) => pub.cancelByCustomer(env, p.token)],
   ['GET', '/api/files/photo/:id', (env, req, url, p) => pub.servePhoto(env, p.id)],
   ['GET', '/api/files/qr/:slug', (env, req, url, p) => pub.serveQr(env, p.slug)],
@@ -43,6 +46,9 @@ const routes = [
   ['POST', '/api/owner/photos', staff(['owner'], (env, me, req) => st.addPhoto(env, me, req))],
   ['DELETE', '/api/owner/photos/:id', staff(['owner'], (env, me, req, url, p) => st.deletePhoto(env, me, p.id))],
   ['PUT', '/api/owner/upi-qr', staff(['owner'], (env, me, req) => st.setQr(env, me, req))],
+  ['PUT', '/api/owner/razorpay', staff(['owner'], (env, me, req) => st.saveRazorpay(env, me, req))],
+  ['DELETE', '/api/owner/razorpay', staff(['owner'], (env, me) => st.disconnectRazorpay(env, me))],
+  ['POST', '/api/owner/bookings/:id/refunded', staff(['owner'], (env, me, req, url, p) => st.markRefunded(env, me, p.id))],
   ['POST', '/api/owner/helpers', staff(['owner'], (env, me, req) => st.addHelper(env, me, req))],
   ['DELETE', '/api/owner/helpers/:id', staff(['owner'], (env, me, req, url, p) => st.removeHelper(env, me, p.id))],
   ['POST', '/api/staff/pin', staff(['owner', 'helper'], (env, me, req) => st.changePin(env, me, req))],
@@ -103,8 +109,9 @@ export default {
     // Anything else is the single-page app (Workers Assets falls back to index.html).
     return env.ASSETS.fetch(request);
   },
-  // Cron trigger (see wrangler.toml): release slots whose 30-minute hold ran out.
+  // Cron trigger (see wrangler.toml): first pick up online payments we missed, then
+  // release slots whose hold ran out.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(sweepExpired(env.DB));
+    ctx.waitUntil(reconcileRecent(env).catch((e) => console.error(e)).then(() => sweepExpired(env.DB)));
   },
 };

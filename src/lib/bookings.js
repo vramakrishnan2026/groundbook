@@ -92,13 +92,13 @@ export async function insertBooking(db, b) {
     db
       .prepare(
         `INSERT INTO bookings (token, ref, ground_id, unit_id, date, start_hour, mask, kind, status,
-            customer_name, phone, amount, note, ip, hold_expires_at, created_at, decided_at, decided_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+            customer_name, phone, amount, note, ip, hold_expires_at, created_at, decided_at, decided_by, paid_via)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .bind(
         token, ref, b.groundId, b.unitId, b.date, b.hour, b.mask, b.kind, b.status,
         b.name || '', b.phone || '', b.amount || 0, b.note || '', b.ip || '',
-        b.holdExpiresAt ?? null, b.now, b.decidedAt ?? null, b.decidedBy ?? null
+        b.holdExpiresAt ?? null, b.now, b.decidedAt ?? null, b.decidedBy ?? null, b.paidVia ?? null
       ),
     ...bitsOf(b.mask).map((cell) =>
       db
@@ -151,5 +151,7 @@ export function publicBooking(b, units) {
     utr: b.utr,
     holdExpiresAt: b.hold_expires_at,
     note: b.note,
+    paidVia: b.paid_via || null,
+    refundNeeded: !!b.refund_needed,
   };
 }

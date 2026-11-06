@@ -3,10 +3,14 @@
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 import { makeEnv, createServer } from '../scripts/dev-server.mjs';
+import { fakeRazorpay, KEY_ID, KEY_SECRET } from './fake-razorpay.mjs';
 
 const OUT = process.env.SHOTS || 'e2e-shots';
 fs.mkdirSync(OUT, { recursive: true });
 const env = await makeEnv();
+const fake = fakeRazorpay();
+env.RZP_FETCH = fake.fetchFn;
+env.SECRETS_KEY = 'e2e-secrets-key-0123456789';
 const server = createServer(env).listen(0);
 const base = `http://localhost:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -146,6 +150,36 @@ try {
   await shot(hp, 'helper-upcoming', true);
   const ownerFromHelper = await hp.evaluate(async () => (await fetch('/api/owner/today')).status);
   if (ownerFromHelper !== 403) problems.push(`helper reached owner API: ${ownerFromHelper}`);
+
+  // ---------------- Razorpay: owner connects keys, customer pays online
+  await o.goto(`${base}/owner/settings`);
+  await expectText(o, 'Automatic payments (Razorpay)');
+  await o.fill('#rzpKey', KEY_ID); await o.fill('#rzpSecret', 'WrongSecret12345');
+  await o.getByRole('button', { name: 'Connect Razorpay' }).click();
+  await expectText(o, 'did not accept');
+  await o.fill('#rzpSecret', KEY_SECRET);
+  await o.getByRole('button', { name: 'Connect Razorpay' }).click();
+  await expectText(o, 'On · Test mode');
+  await o.locator('#razorpay').scrollIntoViewIfNeeded();
+  await o.locator('#razorpay').screenshot({ path: `${OUT}/${String(++n).padStart(2, '0')}-owner-razorpay-card.png` });
+
+  const r = await phone();
+  await r.route('https://checkout.razorpay.com/v1/checkout.js', (route) => route.fulfill({ contentType: 'text/javascript', body: `
+    window.Razorpay = function (opts) { this.on = function () {}; this.open = async function () { opts.handler(await window.__fakePay(opts.order_id)); }; };` }));
+  await r.exposeFunction('__fakePay', (orderId) => fake.pay(orderId));
+  await r.goto(`${base}/g/demo?step=slots`);
+  await r.locator('.date').nth(2).click();
+  await r.getByRole('button', { name: '8 PM free' }).click();
+  await r.getByRole('button', { name: 'Continue' }).click();
+  await r.fill('#name', 'Online Payer'); await r.fill('#phone', '9811122233');
+  await r.getByRole('button', { name: /Hold slot/ }).click();
+  await r.waitForURL(/\/b\//);
+  await expectText(r, 'Pay securely online');
+  await shot(r, 'customer-pay-razorpay', true);
+  await r.getByRole('button', { name: /^Pay ₹/ }).click();
+  await expectText(r, 'Booking confirmed');
+  await expectText(r, 'Paid online');
+  await shot(r, 'customer-confirmed-online', true);
 
   // price change shows on customer page
   const c3 = await phone();

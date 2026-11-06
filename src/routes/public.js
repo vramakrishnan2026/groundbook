@@ -4,6 +4,7 @@ import {
   isPastSlot, priceFor, publicBooking, sweepExpired, unitsWithPrices,
 } from '../lib/bookings.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
+import { createOrder, groundKeys, markPaidOnline, paidPayment, reconcile, signatureOk } from '../lib/razorpay.js';
 import { HttpError, bad, cleanName, cleanPhone, cleanUtr, dayType, int, isDate, json, readJson } from '../lib/util.js';
 
 const MAX_HOLDS_PER_PHONE = 2;
@@ -104,11 +105,14 @@ async function bookingByToken(db, token) {
   return b;
 }
 
-export async function getBooking(env, token) {
+export async function getBooking(env, token, extra = {}) {
   const db = env.DB;
+  let b = await bookingByToken(db, token);
+  let g = await db.prepare('SELECT * FROM grounds WHERE id = ?').bind(b.ground_id).first();
+  // Paid online but the page was closed before we heard back? Ask Razorpay before expiring holds.
+  if (b.rzp_order_id && !b.rzp_payment_id && (await reconcile(env, b, g))) b = await bookingByToken(db, token);
   await sweepExpired(db);
-  const b = await bookingByToken(db, token);
-  const g = await db.prepare('SELECT * FROM grounds WHERE id = ?').bind(b.ground_id).first();
+  b = await bookingByToken(db, token);
   const units = await unitsWithPrices(db, g.id);
   return json({
     booking: { ...publicBooking(b, units), serverNow: Date.now(), hasProof: !!b.proof_key },
@@ -117,8 +121,57 @@ export async function getBooking(env, token) {
       upiId: g.upi_id,
       upiName: g.upi_name || g.name,
       qrUrl: g.upi_qr_key ? `/api/files/qr/${g.slug}` : null,
+      razorpay: !!(g.rzp_enabled && g.rzp_key_id && g.rzp_key_secret_enc),
     },
+    ...extra,
   });
+}
+
+// Razorpay step 1: create (or reuse) an order for this booking.
+export async function razorpayOrder(env, token) {
+  const db = env.DB;
+  await sweepExpired(db);
+  const b = await bookingByToken(db, token);
+  if (b.status !== 'HOLD') throw new HttpError(409, b.status === 'EXPIRED' ? 'Time ran out and the slot was released. Please book again.' : 'This booking is not waiting for payment.', 'not_hold');
+  const g = await db.prepare('SELECT * FROM grounds WHERE id = ?').bind(b.ground_id).first();
+  const keys = await groundKeys(env, g);
+  if (!keys) throw bad('Online payment is not set up for this ground. Please pay by UPI.');
+  let orderId = b.rzp_order_id;
+  if (!orderId) {
+    orderId = (await createOrder(env, keys, b)).id;
+    // Give the customer time to finish paying in Razorpay before the hold can run out.
+    const holdUntil = Math.max(b.hold_expires_at || 0, Date.now() + 15 * 60000);
+    await db.prepare('UPDATE bookings SET rzp_order_id = ?, hold_expires_at = ? WHERE id = ? AND status = ?').bind(orderId, holdUntil, b.id, 'HOLD').run();
+  }
+  const units = await unitsWithPrices(db, g.id);
+  const u = units.find((x) => x.id === b.unit_id);
+  return json({
+    keyId: keys.keyId,
+    orderId,
+    amount: b.amount * 100,
+    currency: 'INR',
+    name: g.name,
+    description: `${u ? u.name : 'Booking'} · ${b.date} · ${b.ref}`,
+    prefill: { name: b.customer_name, contact: b.phone ? '+91' + b.phone : '' },
+  });
+}
+
+// Razorpay step 2: the browser hands back the payment; we check the signature AND ask Razorpay.
+export async function razorpayVerify(env, token, request) {
+  const db = env.DB;
+  const body = await readJson(request);
+  const b = await bookingByToken(db, token);
+  if (!b.rzp_order_id || body.razorpay_order_id !== b.rzp_order_id) throw bad('Payment does not match this booking');
+  const g = await db.prepare('SELECT * FROM grounds WHERE id = ?').bind(b.ground_id).first();
+  const keys = await groundKeys(env, g);
+  if (!keys) throw bad('Online payment is not set up for this ground.');
+  if (!(await signatureOk(keys, b.rzp_order_id, body.razorpay_payment_id, body.razorpay_signature))) {
+    throw bad('Could not verify this payment. If money was taken, contact the ground.', 'rzp_signature');
+  }
+  const p = await paidPayment(env, keys, b, body.razorpay_payment_id);
+  if (!p) throw new HttpError(409, 'Razorpay has not confirmed this payment yet. Refresh this page in a minute.', 'rzp_not_captured');
+  const outcome = await markPaidOnline(db, b, p);
+  return getBooking(env, token, { outcome });
 }
 
 export async function submitProof(env, token, request) {

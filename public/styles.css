@@ -191,3 +191,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .steps { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--text); }
 .steps li::marker { color: var(--muted); font-weight: 700; }
 .link.center { align-self: center; text-align: center; }
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▸ "; color: var(--muted); }
+details[open] > summary::before { content: "▾ "; }
+.link.red { color: var(--red); }

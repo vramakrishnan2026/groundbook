@@ -124,6 +124,16 @@ async function copy(text, done = 'Copied') {
   catch { prompt('Copy this:', text); }
 }
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return window.Razorpay ? resolve() : setTimeout(resolve, 500);
+    const el = document.createElement('script');
+    el.src = src; el.onload = resolve;
+    el.onerror = () => { el.remove(); reject(new Error('Could not open the payment page. Check your internet and try again.')); };
+    document.head.appendChild(el);
+  });
+}
+
 // ---------------------------------------------------------------- view plumbing
 const $app = document.getElementById('app');
 let view = { actions: {}, forms: {}, changes: {}, cleanup: [] };
@@ -349,7 +359,7 @@ async function bookingPage(token) {
   if (mine && !mine.ref) { mine.ref = b.ref; store.set('gb_bookings', list); }
   const summary = h`<div class="card" style="gap:10px">
     ${kv('Booking ID', b.ref)}${kv('Name', b.name)}${kv('Date', fmtDate(b.date))}${kv('Time', b.timeLabel)}${kv('Court', [b.unit.name, b.unit.subtitle].filter(Boolean).join(' · '))}
-    <div class="divider"></div>${kv(b.status === 'CONFIRMED' ? 'Paid' : 'Amount', money(b.amount), 'total')}</div>`;
+    <div class="divider"></div>${kv(b.status === 'CONFIRMED' ? (b.paidVia === 'razorpay' ? 'Paid online' : 'Paid') : 'Amount', money(b.amount), 'total')}</div>`;
   const contact = g.whatsapp ? h`<div class="btn-row">
       <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${hourLabel(b.hour)}.`)}" target="_blank" rel="noopener">${icon('chat', 18)} WhatsApp</a>
       <a class="btn soft" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call ground</a></div>` : '';
@@ -376,6 +386,10 @@ async function bookingPage(token) {
     return result(h`<div class="circle big red">${icon('x', 40)}</div>`, 'Payment not accepted', `${g.name} could not confirm this payment${b.note ? `: ${b.note}` : ''}. If you paid, please contact them.`, '',
       h`${contact}<button class="btn primary" data-act="book">Book another slot</button>`);
   }
+  if (b.refundNeeded) {
+    return result(h`<div class="circle big amber">${icon('rupee' in ICONS ? 'rupee' : 'clock', 40)}</div>`, 'Refund on the way', `Your payment of ${money(b.amount)} went through, but the slot was booked by someone else after your time ran out. ${g.name} will refund you. Contact them if you don't get it within a few days.`, '',
+      h`${contact}<button class="btn primary" data-act="book">Book another slot</button>`);
+  }
   if (b.status === 'EXPIRED') {
     return result(h`<div class="circle big grey">${icon('clock', 40)}</div>`, 'Time ran out', 'The payment proof was not sent in time, so the slot was released. If you already paid, contact the ground.', '',
       h`${contact}<button class="btn primary" data-act="book">Book again</button>`);
@@ -391,13 +405,7 @@ function payPage(token, data) {
   // The QR holds the same payment details; scanning a QR is always allowed by UPI apps.
   const qrSrc = upi ? qrPng(upi) : null;
   let file = null;
-  render(h`<div class="screen">
-    ${topbar('Payment', `/g/${g.slug}`)}
-    <form class="content tight" data-form="proof" id="proof-form" novalidate>
-      <div><span class="pill amber">${icon('clock', 16)} Slot held · <span id="countdown">--:--</span> left</span></div>
-      <div class="card" style="align-items:center;gap:4px;padding:20px 16px">
-        <div class="small muted">Amount to pay</div><div class="display">${money(b.amount)}</div>
-        <div class="small muted">${fmtDate(b.date)} · ${hourLabel(b.hour)} · ${b.unit.name}</div></div>
+  const manualSteps = h`
       <div class="card">
         <div class="row gap12"><div class="circle soft" style="width:32px;height:32px">1</div><div class="strong">Pay ${money(b.amount)} by UPI</div></div>
         ${p.upiId ? h`
@@ -427,13 +435,52 @@ function payPage(token, data) {
         <div class="field"><label for="utr">UPI reference number (12 digits)</label><input class="input" id="utr" name="utr" inputmode="numeric" autocomplete="off" maxlength="16" placeholder="e.g. 412899321170" required>
           <span class="caption muted" style="letter-spacing:0">Find it in your UPI app under the payment details (UTR / UPI Ref No.).</span></div>
       </div>
+`;
+  render(h`<div class="screen">
+    ${topbar('Payment', `/g/${g.slug}`)}
+    <form class="content tight" data-form="proof" id="proof-form" novalidate>
+      <div><span class="pill amber">${icon('clock', 16)} Slot held · <span id="countdown">--:--</span> left</span></div>
+      <div class="card" style="align-items:center;gap:4px;padding:20px 16px">
+        <div class="small muted">Amount to pay</div><div class="display">${money(b.amount)}</div>
+        <div class="small muted">${fmtDate(b.date)} · ${hourLabel(b.hour)} · ${b.unit.name}</div></div>
+      ${p.razorpay ? h`
+      <div class="card">
+        <div class="row gap12"><div class="circle soft">${icon('shield', 22)}</div><div class="grow"><div class="strong">Pay securely online</div><div class="small muted">UPI apps, cards or netbanking. Your slot is confirmed the moment you pay.</div></div></div>
+        <div class="chips"><span class="chip">Google Pay</span><span class="chip">PhonePe</span><span class="chip">Paytm</span><span class="chip">Cards</span></div>
+      </div>
+      <details class="card manual"><summary class="small strong">Pay by UPI ID and send a screenshot instead</summary>
+        <div class="col gap16" style="margin-top:12px">${manualSteps}
+          <button class="btn secondary" type="submit">Send for approval</button></div></details>` : manualSteps}
       <div class="form-error banner red hidden" role="alert"></div>
       <button type="button" class="link muted" data-act="cancel" style="align-self:center">Cancel this booking</button>
     </form>
-    <div class="footer"><button class="btn primary" type="submit" form="proof-form">Send for approval</button>
-      <div class="caption muted center" style="letter-spacing:0">The owner checks the payment and confirms your booking.</div></div>
+    ${p.razorpay
+      ? h`<div class="footer"><button class="btn primary" type="button" data-act="rzp">Pay ${money(b.amount)}</button>
+          <div class="caption muted center" style="letter-spacing:0">${icon('lock', 12)} Payments handled by Razorpay. Money goes to ${g.name}.</div></div>`
+      : h`<div class="footer"><button class="btn primary" type="submit" form="proof-form">Send for approval</button>
+          <div class="caption muted center" style="letter-spacing:0">The owner checks the payment and confirms your booking.</div></div>`}
   </div>`, {
     actions: {
+      rzp: async (el) => {
+        el.disabled = true;
+        try {
+          const [o] = await Promise.all([api('POST', `/api/b/${token}/razorpay-order`), loadScript('https://checkout.razorpay.com/v1/checkout.js')]);
+          const rz = new window.Razorpay({
+            key: o.keyId, order_id: o.orderId, amount: o.amount, currency: o.currency, name: o.name, description: o.description,
+            prefill: o.prefill, notes: { booking: b.ref }, theme: { color: '#15803d' },
+            handler: async (resp) => {
+              try {
+                const r = await api('POST', `/api/b/${token}/razorpay-verify`, resp);
+                if (r.outcome === 'refund_needed') toast('Payment received, but the slot was taken meanwhile. The ground will refund you.');
+              } catch (e) { toast(e.message); }
+              route();
+            },
+            modal: { ondismiss: () => route() },
+          });
+          rz.on('payment.failed', (r) => toast((r && r.error && r.error.description) || 'Payment failed. Please try again.'));
+          rz.open();
+        } catch (e) { toast(e.message); el.disabled = false; }
+      },
       copyUpi: () => copy(p.upiId, 'UPI ID copied. Now open your UPI app and pay to this ID.'),
       cancel: async () => {
         if (!confirm('Cancel this booking and release the slot?')) return;
@@ -511,7 +558,7 @@ const ownerNav = (active, pending = 0) => h`<nav class="nav">
 const bookingRow = (b, { showAmount = false, act } = {}) => h`<div class="brow" ${act ? raw(`data-act="${act}" data-id="${b.id}" role="button" tabindex="0" style="cursor:pointer"`) : ''}>
   <div class="time">${hourLabel(b.hour)}</div>
   <div class="grow col" style="gap:2px"><div class="strong">${b.kind === 'block' ? 'Closed' : b.name}</div>
-    <div class="small muted">${[b.unit && b.unit.name, b.phone, showAmount && b.amount ? money(b.amount) : null, b.kind === 'walkin' ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
+    <div class="small muted">${[b.unit && b.unit.name, b.phone, showAmount && b.amount ? money(b.amount) + (b.paidVia === 'razorpay' ? ' online' : '') : null, b.kind === 'walkin' ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
   ${b.phone ? h`<a class="call" href="tel:+91${b.phone}" aria-label="Call ${b.name}">${icon('phone', 20)}</a>` : ''}</div>`;
 
 async function ownerToday() {
@@ -524,6 +571,9 @@ async function ownerToday() {
       <div class="stats">
         <div class="card"><span class="small muted">Bookings today</span><span class="title">${t.bookingsToday}</span></div>
         <div class="card"><span class="small muted">This week</span><span class="title">${money(t.weekTotal)}</span></div></div>
+      ${(t.refunds || []).map((b) => h`<div class="banner red" style="align-items:center">${icon('x', 20)}<div class="grow"><div class="strong">Refund ${money(b.amount)} to ${b.name}</div>
+          <div>${b.phone} · paid online after the ${hourLabel(b.hour)} ${dayShort(b.date)} slot was taken. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).</div></div>
+          <button class="btn small danger" style="background:#fff" data-act="refunded" data-id="${b.id}">Done</button></div>`)}
       ${t.pending.length ? h`<div class="col gap12">${t.pending.map((b) => h`
         <div class="pending" data-go="/owner/review/${b.id}" role="button" tabindex="0">
           <div class="circle" style="background:#fff;color:var(--amber)">${icon('clock', 20)}</div>
@@ -532,7 +582,12 @@ async function ownerToday() {
         : h`<div class="banner green">${icon('check', 20)}<div>No payments waiting for you.</div></div>`}
       <div class="col gap12"><div class="row between"><div class="heading">Today's bookings</div><button class="link" data-go="/owner/calendar">See calendar</button></div>
         ${t.today.length ? h`<div class="list">${t.today.map((b) => bookingRow(b, { showAmount: true }))}</div>` : h`<div class="empty">No confirmed bookings today yet.</div>`}</div>
-    </div>${ownerNav('today', t.pending.length)}</div>`, { actions: { refresh: () => route() } });
+    </div>${ownerNav('today', t.pending.length)}</div>`, {
+    actions: {
+      refresh: () => route(),
+      refunded: async (el) => { if (!confirm('Mark this refund as done?')) return; await api('POST', `/api/owner/bookings/${el.dataset.id}/refunded`); route(); },
+    },
+  });
   every(30000, async () => { if (!document.querySelector('.scrim')) route(); });
 }
 
@@ -629,7 +684,7 @@ async function ownerCalendar() {
     const isBlock = b.kind === 'block';
     openSheet(h`<div class="title">${isBlock ? 'Closed slot' : b.name}</div>
       <div class="card" style="gap:10px">${kv('When', `${fmtDate(b.date)}, ${b.timeLabel}`)}${kv('Court', b.unit.name)}
-        ${!isBlock ? h`${kv('Phone', b.phone || '—')}${kv('Amount', money(b.amount))}${kv('Status', { HOLD: 'Waiting for payment', PENDING: 'Payment to check', CONFIRMED: b.kind === 'walkin' ? 'Walk-in (paid)' : 'Confirmed' }[b.status])}${kv('Booking ID', b.ref)}` : kv('Note', b.note || '—')}</div>
+        ${!isBlock ? h`${kv('Phone', b.phone || '—')}${kv('Amount', money(b.amount))}${kv('Status', { HOLD: 'Waiting for payment', PENDING: 'Payment to check', CONFIRMED: b.kind === 'walkin' ? 'Walk-in (paid)' : b.paidVia === 'razorpay' ? 'Paid online' : 'Confirmed (UPI)' }[b.status])}${kv('Booking ID', b.ref)}` : kv('Note', b.note || '—')}</div>
       ${b.phone ? h`<a class="btn soft" href="tel:+91${b.phone}">${icon('phone', 18)} Call ${b.name}</a>` : ''}
       ${b.status === 'PENDING' || b.status === 'HOLD' ? h`<button class="btn primary" data-go="/owner/review/${b.id}">Review payment</button>` : ''}
       ${b.status === 'CONFIRMED' ? h`<button class="btn danger" data-act="cancelB">${isBlock ? 'Open this slot again' : 'Cancel booking'}</button>` : ''}
@@ -674,7 +729,7 @@ async function ownerCalendar() {
 
 async function ownerSettings() {
   const s = await api('GET', '/api/owner/settings');
-  const g = s.ground;
+  const g = s.ground, rz = s.razorpay;
   const link = `${location.origin}/g/${g.slug}`;
   const qrImg = qrPng(link, 12, 4);
   const hours = Array.from({ length: 25 }, (_, i) => i);
@@ -699,8 +754,31 @@ async function ownerSettings() {
         <div class="field"><label for="upiName">Name shown in UPI apps</label><input class="input" id="upiName" name="upiName" value="${g.upiName}"></div>
         <div class="field"><label>UPI QR code (from your UPI or PhonePe Business app)</label>
           <label class="upload">${g.qrUrl ? h`<img src="${g.qrUrl}" alt="Your UPI QR">` : icon('qr', 24)}<span class="small strong">${g.qrUrl ? 'Change QR image' : 'Upload QR image'}</span><input type="file" accept="image/*" data-change="qr"></label></div>
-        <div class="banner grey">${icon('shield', 18)}<div>Automatic payments with Razorpay are coming soon. For now, you approve each UPI payment.</div></div>
         <button class="btn soft" type="submit">Save payment details</button></form>
+
+      <div class="card" id="razorpay">
+        <div class="row between"><div class="heading">Automatic payments (Razorpay)</div>
+          <span class="pill ${rz.enabled ? 'green' : ''}">${!rz.connected ? 'Not connected' : !rz.enabled ? 'Off' : rz.mode === 'test' ? 'On · Test mode' : 'On'}</span></div>
+        <p class="small muted">Customers tap <b>Pay</b>, approve in their UPI app, and the booking confirms by itself. No screenshots to check. Money goes straight to your bank. Razorpay charges a small fee on each payment.</p>
+        ${rz.connected && rz.mode === 'test' ? h`<div class="banner amber">${icon('clock', 18)}<div>Test mode: payments are not real. Connect your <b>Live</b> keys before customers use it.</div></div>` : ''}
+        <details ${rz.connected ? '' : raw('open')}><summary class="small strong green">How to set it up</summary>
+          <ol class="steps small" style="margin-top:10px">
+            <li>Sign up at <a class="green strong" href="https://dashboard.razorpay.com/signup" target="_blank" rel="noopener">razorpay.com</a> and choose <b>Unregistered / Individual</b> business. Keep ready: your <b>PAN</b>, the <b>mobile number linked to your bank KYC</b> (or your Aadhaar), and a <b>bank account in your name</b>.</li>
+            <li>Razorpay verifies your account, often the same day. You can try everything with <b>Test mode</b> keys while you wait.</li>
+            <li>In the Razorpay Dashboard, open <b>Account &amp; Settings → Website and app details</b> and add this website:
+              <span class="upi-box" style="margin-top:6px;display:flex"><span class="small strong" style="overflow-wrap:anywhere">${location.origin}</span><button type="button" class="link" data-act="copyOrigin">Copy</button></span></li>
+            <li>Open <b>Account &amp; Settings → API Keys</b> and tap <b>Generate Key</b> (use <b>Live mode</b> for real payments).</li>
+            <li>Paste the <b>Key ID</b> and <b>Key Secret</b> below and tap <b>Connect</b>. We check them with Razorpay before saving, and the secret is stored encrypted.</li>
+          </ol></details>
+        <form class="col gap12" data-form="rzp">
+          <div class="field"><label for="rzpKey">Key ID</label><input class="input" id="rzpKey" name="keyId" value="${rz.keyId}" placeholder="rzp_live_..." autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="rzpSecret">Key Secret</label><input class="input" id="rzpSecret" name="keySecret" type="password" placeholder="${rz.connected ? 'Saved. Paste a new one to change it' : 'Paste the Key Secret'}" autocomplete="off"></div>
+          <div class="form-error banner red hidden" role="alert"></div>
+          <button class="btn ${rz.connected ? 'secondary' : 'primary'}" type="submit">${rz.connected ? 'Update keys' : 'Connect Razorpay'}</button>
+        </form>
+        ${rz.connected ? h`<label class="radio-row"><input type="checkbox" data-change="rzpToggle" ${rz.enabled ? raw('checked') : ''}><span class="grow"><span class="small strong">Use Razorpay for new bookings</span><br><span class="caption muted" style="letter-spacing:0">Customers can still choose UPI + screenshot.</span></span></label>
+          <button class="link red" style="align-self:flex-start" data-act="rzpDisconnect">Disconnect Razorpay</button>` : ''}
+      </div>
 
       <form class="card" data-form="ground"><div class="heading">Ground page</div>
         <div class="field"><label>Ground name</label><input class="input" name="name" value="${g.name}"></div>
@@ -735,6 +813,8 @@ async function ownerSettings() {
     </div>${ownerNav('set')}</div>`, {
     actions: {
       copyLink: () => copy(link, 'Link copied'),
+      copyOrigin: () => copy(location.origin, 'Website address copied'),
+      rzpDisconnect: async () => { if (!confirm('Disconnect Razorpay? Customers will pay by UPI + screenshot again.')) return; await api('DELETE', '/api/owner/razorpay'); toast('Razorpay disconnected'); route(); },
       logout,
       delPhoto: async (el) => { if (!confirm('Delete this photo?')) return; await api('DELETE', `/api/owner/photos/${el.dataset.id}`); route(); },
       delHelper: async (el) => { if (!confirm(`Remove ${el.dataset.name}? They will be logged out.`)) return; await api('DELETE', `/api/owner/helpers/${el.dataset.id}`); route(); },
@@ -747,6 +827,10 @@ async function ownerSettings() {
         catch (e) { toast(e.message); }
         route();
       },
+      rzpToggle: async (el) => {
+        try { await api('PUT', '/api/owner/razorpay', { enabled: el.checked }); toast(el.checked ? 'Razorpay is on' : 'Razorpay is off'); } catch (e) { toast(e.message); }
+        route();
+      },
       qr: async (el) => {
         if (!el.files[0]) return;
         try { await api('PUT', '/api/owner/upi-qr', await compressImage(el.files[0], 1000, 0.92)); toast('QR code saved'); } catch (e) { toast(e.message); }
@@ -754,6 +838,10 @@ async function ownerSettings() {
       },
     },
     forms: {
+      rzp: async (f) => {
+        await api('PUT', '/api/owner/razorpay', { keyId: f.keyId.trim(), keySecret: f.keySecret.trim() });
+        toast('Razorpay connected'); route();
+      },
       prices: async (f) => {
         await api('PUT', '/api/owner/settings', { prices: s.units.map((u) => ({ unitId: u.id, weekday: f[`wd_${u.id}`], weekend: f[`we_${u.id}`] })) });
         toast('Prices saved');
