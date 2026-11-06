@@ -1,0 +1,31 @@
+name = "groundbook"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+# The web app (HTML/CSS/JS). Unknown paths fall back to index.html so links like /g/green-field work.
+# Every request reaches the Worker first; it handles /api/* and passes the rest to the app files.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+# Bookings, grounds, prices, staff. Create with:  npx wrangler d1 create groundbook
+# then paste the database_id it prints below.
+[[d1_databases]]
+binding = "DB"
+database_name = "groundbook"
+database_id = "PASTE-DATABASE-ID-HERE"
+migrations_dir = "migrations"
+
+# Photos, UPI QR codes and payment screenshots. Create with:  npx wrangler r2 bucket create groundbook-files
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "groundbook-files"
+
+# Release expired 30-minute holds every 5 minutes (also done on every request).
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true
