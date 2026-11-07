@@ -231,6 +231,9 @@ function renderError(err) {
 }
 
 const topbar = (title, backTo) => h`<div class="topbar">${backTo ? h`<button class="iconbtn" aria-label="Back" data-go="${backTo}">${icon('back')}</button>` : ''}<div class="heading">${title}</div></div>`;
+// Faint background photo for a screen (see .screen::before in styles.css).
+const photoBg = (url) => (url ? raw(`style="--screen-photo:url('${String(url).replace(/['"()\\\s]/g, '')}')"`) : '');
+const groundPhoto = (slug) => { const d = groundCache[slug]; return d ? (d.photos[0] ? d.photos[0].url : SAMPLE_PHOTOS[0]) : null; };
 const kv = (k, v, cls = '') => h`<div class="kv ${cls}"><span>${k}</span><span>${v}</span></div>`;
 const pitchArt = raw(`<svg viewBox="0 0 390 232" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="390" height="232" fill="#1C8A4B"/>${Array.from({ length: 10 }, (_, i) => `<rect x="${i * 39}" width="19.5" height="232" fill="#22985A"/>`).join('')}<g stroke="#fff" stroke-opacity=".85" stroke-width="3" fill="none"><rect x="28" y="34" width="334" height="166" rx="4"/><path d="M195 34v166"/><circle cx="195" cy="117" r="30"/><rect x="28" y="79" width="40" height="76"/><rect x="322" y="79" width="40" height="76"/></g></svg>`);
 
@@ -275,7 +278,7 @@ function customerHome(slug, data) {
   const sample = !data.photos.length;
   const photos = sample ? SAMPLE_PHOTOS : data.photos.map((p) => p.url);
   const from = Math.min(...data.units.map((u) => Math.min(u.weekday, u.weekend)));
-  render(h`<div class="screen">
+  render(h`<div class="screen" ${photoBg(photos[0])}>
     <div class="hero big">
       <div class="fallback">${pitchArt}</div>
       <div class="strip" id="strip">${photos.map((src, i) => h`<img src="${src}" alt="${sample ? 'Sample football ground photo' : `${g.name} photo ${i + 1}`}" ${i ? raw('loading="lazy"') : ''} onerror="this.remove()">`)}</div>
@@ -326,7 +329,7 @@ async function customerSlots(slug, data, q) {
   // Changing date or court clears the chosen time; picking a time keeps date and court.
   const url = (p) => `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, ...p })}`;
   const price = slots.prices[unit.id];
-  render(h`<div class="screen">
+  render(h`<div class="screen" ${photoBg(groundPhoto(slug))}>
     ${topbar('Pick a slot', `/${slug}`)}
     <div class="content" style="gap:24px">
       <div class="col gap12"><div class="heading">Date</div>
@@ -360,7 +363,7 @@ function customerDetails(slug, data, q) {
   const dayInfo = data.dates.find((d) => d.date === date);
   const price = dayInfo && dayInfo.dayType === 'weekend' ? unit.weekend : unit.weekday;
   const me = store.get('gb_me', {});
-  render(h`<div class="screen">
+  render(h`<div class="screen" ${photoBg(groundPhoto(slug))}>
     ${topbar('Your details', `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, hour })}`)}
     <form class="content" data-form="hold" id="hold-form" novalidate>
       <div class="banner amber">${icon('clock', 22)}<div><div class="strong">We hold the slot for ${data.ground.holdMinutes} minutes</div><div>Pay by UPI and send the screenshot within that time.</div></div></div>
@@ -406,7 +409,7 @@ async function bookingPage(token) {
   const contact = g.whatsapp ? h`<div class="btn-row">
       <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${hourLabel(b.hour)}.`)}" target="_blank" rel="noopener">${icon('chat', 18)} WhatsApp</a>
       <a class="btn soft" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call ground</a></div>` : '';
-  const result = (circle, title, text, extra = '', footer = '') => render(h`<div class="screen">
+  const result = (circle, title, text, extra = '', footer = '') => render(h`<div class="screen" ${photoBg(groundPhoto(g.slug))}>
     ${topbar(g.name, `/${g.slug}`)}
     <div class="content" style="align-items:center;text-align:center;gap:24px;padding-top:24px">
       ${circle}<div class="col" style="gap:8px;align-items:center"><h1 class="display">${title}</h1><p class="muted">${text}</p></div>
@@ -479,7 +482,7 @@ function payPage(token, data) {
           <span class="caption muted" style="letter-spacing:0">Find it in your UPI app under the payment details (UTR / UPI Ref No.).</span></div>
       </div>
 `;
-  render(h`<div class="screen">
+  render(h`<div class="screen" ${photoBg(groundPhoto(g.slug))}>
     ${topbar('Payment', `/${g.slug}`)}
     <form class="content tight" data-form="proof" id="proof-form" novalidate>
       <div><span class="pill amber">${icon('clock', 16)} Slot held · <span id="countdown">--:--</span> left</span></div>
@@ -567,15 +570,17 @@ function payPage(token, data) {
 // ---------------------------------------------------------------- login
 function loginPage() {
   const next = new URLSearchParams(location.search).get('next');
-  render(h`<div class="screen">
+  render(h`<div class="screen dark">
     <form class="content" data-form="login" id="login-form" style="justify-content:center" novalidate>
-      <div class="circle big primary">${icon('lock', 36)}</div>
-      <div class="col"><h1 class="display">Log in</h1><p class="muted">For ground owners and helpers.</p></div>
+      <div class="glass">
+      <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Log in</h1></div></div>
+      <p class="muted" style="margin-top:-8px">For ground owners and helpers.</p>
       <div class="field"><label for="phone">Phone number</label><input class="input" id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="username" required></div>
       <div class="field"><label for="pin">PIN</label><input class="input" id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" required></div>
       <div class="form-error banner red hidden" role="alert"></div>
       <button class="btn primary" type="submit">Log in</button>
       <p class="small muted center">Forgot your PIN? Ask the person who set up your ground.</p>
+      </div>
     </form></div>`, {
     forms: {
       login: async (f) => {

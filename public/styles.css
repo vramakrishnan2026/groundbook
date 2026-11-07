@@ -226,3 +226,32 @@ details[open] > summary::before { content: "▾ "; }
 .slot.on, .date.on { background: linear-gradient(135deg, #18a34a, #15803d); box-shadow: 0 6px 14px -6px rgba(21,128,61,.6); }
 .tiles .tile:first-child:nth-last-child(3) { grid-column: 1 / -1; }
 .hero .over svg, .hero .brand svg { flex: none; }
+
+/* --- photo backgrounds (GoArena style) --- */
+/* Around the app on wide screens: GoArena's stadium under a navy tint. */
+body { background: #0b1220; }
+body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(11,18,32,.66), rgba(11,18,32,.82)), url(/img/stadium.jpg) center / cover no-repeat; }
+/* Behind each screen: a faint photo (the ground's own on customer pages) under a light wash. */
+.screen { background: transparent; isolation: isolate; }
+.screen::before, .screen::after { content: ''; position: fixed; top: 0; bottom: 0; left: 0; right: 0; max-width: var(--max); margin: 0 auto; pointer-events: none; }
+.screen::before { z-index: -2; background: #fff center / cover no-repeat; background-image: var(--screen-photo, url(/img/stadium.jpg)), url(/img/stadium.jpg); opacity: .5; }
+.screen::after { z-index: -1; background: linear-gradient(180deg, rgba(255,255,255,.58) 0%, rgba(244,249,246,.72) 45%, rgba(255,255,255,.84) 100%); }
+.screen { background-color: #fff; }
+.screen::before { background-color: #fff; }
+/* Frosted bars so the photo shows through a little */
+.topbar, .footer, .nav { background: rgba(255,255,255,.80); -webkit-backdrop-filter: saturate(1.4) blur(14px); backdrop-filter: saturate(1.4) blur(14px); }
+.footer.plain { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sheet-up { background: linear-gradient(180deg, #fff 0, rgba(255,255,255,.55) 220px, rgba(255,255,255,0) 420px); }
+.slot:not(:disabled):not(.on), .date:not(.on), .chip, .seg { background-color: rgba(255,255,255,.9); }
+.seg { background: rgba(238,243,240,.9); }
+.empty { background: rgba(255,255,255,.7); }
+
+/* Dark variant (login): stadium at 40% under navy, like GoArena's sign-in */
+.screen.dark { color: #fff; }
+.screen.dark::before { background: #0b1220 url(/img/stadium.jpg) center top / cover no-repeat; opacity: .4; }
+.screen.dark::after { background: linear-gradient(180deg, rgba(11,18,32,.68), rgba(11,18,32,.82)); }
+.screen.dark .muted, .screen.dark .field label { color: rgba(255,255,255,.72); }
+.screen.dark .input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #fff; }
+.screen.dark .input:focus { background: rgba(255,255,255,.12); border-color: #4ade80; }
+.screen.dark .glass { background: rgba(15,23,42,.45); border: 1px solid rgba(255,255,255,.12); border-radius: 24px; padding: 24px; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 20px; }
