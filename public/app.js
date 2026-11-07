@@ -134,6 +134,49 @@ function loadScript(src) {
   });
 }
 
+// ---------------------------------------------------------------- Sign in with Google
+// The button is drawn by Google's own script. Everything stays hidden until the
+// server has a Google client ID configured.
+let googleId;
+let gsiLoading;
+async function googleClientId() {
+  if (googleId === undefined) googleId = (await api('GET', '/api/config').catch(() => ({}))).googleClientId || null;
+  return googleId;
+}
+function loadGsi() {
+  if (window.google?.accounts?.id) return Promise.resolve(true);
+  gsiLoading = gsiLoading || new Promise((resolve) => {
+    const el = document.createElement('script');
+    el.src = 'https://accounts.google.com/gsi/client'; el.async = true;
+    el.onload = () => resolve(true);
+    el.onerror = () => { el.remove(); gsiLoading = null; resolve(false); };
+    document.head.appendChild(el);
+  });
+  return gsiLoading;
+}
+// Draws a Google button into #id. onCredential gets Google's signed token.
+async function googleButton(id, onCredential, { text = 'continue_with', dark = false, prompt = false } = {}) {
+  const box = document.getElementById(id);
+  const clientId = await googleClientId();
+  if (!box || !clientId) return false;
+  if (!(await loadGsi()) || !document.body.contains(box)) {
+    if (document.body.contains(box)) box.innerHTML = '<p class="small muted center">Google sign-in could not load. Check your internet.</p>';
+    return false;
+  }
+  window.google.accounts.id.initialize({ client_id: clientId, ux_mode: 'popup', auto_select: false, cancel_on_tap_outside: true, use_fedcm_for_prompt: true,
+    callback: (r) => onCredential(r.credential) });
+  box.innerHTML = '';
+  window.google.accounts.id.renderButton(box, { theme: dark ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text, logo_alignment: 'center', width: Math.min(Math.max(box.clientWidth, 240), 400) });
+  box.closest('[data-google]')?.classList.remove('hidden');
+  if (prompt) window.google.accounts.id.prompt();
+  return true;
+}
+const googleName = (cred) => { try { return JSON.parse(decodeURIComponent(escape(atob(cred.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))).name || ''; } catch { return ''; } };
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.classList.remove('hidden'); } else toast(msg);
+}
+
 // ---------------------------------------------------------------- view plumbing
 const $app = document.getElementById('app');
 let view = { actions: {}, forms: {}, changes: {}, cleanup: [] };
@@ -198,6 +241,8 @@ const ROUTES = [
   [/^\/owner\/settings\/?$/, () => ownerSettings()],
   [/^\/owner\/review\/(\d+)\/?$/, (m) => ownerReview(m[1])],
   [/^\/helper\/?$/, () => helperPage()],
+  [/^\/signup\/?$/, () => signupPage()],
+  [/^\/admin\/?$/, () => adminPage()],
   [/^\/?$/, () => landing()],
   [/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, (m) => customer(m[1])], // book.goarena.in/llab-toof
 ];
@@ -256,7 +301,7 @@ function landing() {
       </div>
       <p class="small muted">Got a booking link from a ground? Open it directly. Ground owners and helpers can log in below.</p>
     </div>
-    <div class="footer plain"><button class="btn primary" data-go="/login">Owner / helper login</button></div></div>`);
+    <div class="footer plain"><div class="btn-row"><button class="btn secondary" data-go="/signup">List your ground</button><button class="btn primary" data-go="/login">Log in</button></div></div></div>`);
 }
 
 // ---------------------------------------------------------------- customer: ground → slots → details
@@ -309,7 +354,8 @@ function customerHome(slug, data) {
         <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${hourLabel(b.hour)}</div>
         <div class="grow"><div class="strong">${fmtDate(b.date)}</div><div class="small muted">${b.unit} · ${b.ref}</div></div>${icon('right', 18)}</a>`)}</div>` : ''}
     </div>
-    <div class="footer"><button class="btn primary" data-go="/${slug}?step=slots">Check free slots ${icon('right', 18)}</button></div>
+    <div class="footer">${g.open ? h`<button class="btn primary" data-go="/${slug}?step=slots">Check free slots ${icon('right', 18)}</button>`
+      : h`<div class="col gap8"><p class="small muted center">Online booking opens soon.</p>${g.whatsapp ? h`<a class="btn primary" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call to book</a>` : ''}</div>`}</div>
   </div>`);
   const strip = document.getElementById('strip'), dots = document.getElementById('dots');
   if (strip && dots) strip.addEventListener('scroll', () => {
@@ -575,19 +621,109 @@ function loginPage() {
       <div class="glass">
       <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Log in</h1></div></div>
       <p class="muted" style="margin-top:-8px">For ground owners and helpers.</p>
+      <div class="col gap12 hidden" data-google><div id="gbtn" class="gbtn"></div>
+        <div class="form-error banner red hidden" id="gerr" role="alert"></div>
+        <div class="or"><span>or use phone and PIN</span></div></div>
       <div class="field"><label for="phone">Phone number</label><input class="input" id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="username" required></div>
       <div class="field"><label for="pin">PIN</label><input class="input" id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" required></div>
       <div class="form-error banner red hidden" role="alert"></div>
       <button class="btn primary" type="submit">Log in</button>
       <p class="small muted center">Forgot your PIN? Ask the person who set up your ground.</p>
       </div>
+      <p class="small center" style="color:rgba(255,255,255,.75)">Own a ground? <a class="link" href="/signup" data-go="/signup" style="color:#4ade80">List it on GoArena</a></p>
     </form></div>`, {
     forms: {
-      login: async (f) => {
-        const r = await api('POST', '/api/auth/login', f, { noRedirect: true });
-        const safeNext = next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login') ? next : null;
-        go(r.role === 'owner' ? safeNext || '/owner' : '/helper', true);
+      login: async (f) => done(await api('POST', '/api/auth/login', f, { noRedirect: true })),
+    },
+  });
+  const safeNext = next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login') ? next : null;
+  function done(r) { go(r.role === 'owner' ? safeNext || '/owner' : '/helper', true); }
+  googleButton('gbtn', async (credential) => {
+    try { done(await api('POST', '/api/auth/google', { credential }, { noRedirect: true })); }
+    catch (e) { showError('gerr', e.message); }
+  }, { dark: true });
+}
+
+// ---------------------------------------------------------------- new ground signup
+function signupPage() {
+  let credential = null;
+  const step1 = () => {
+    render(h`<div class="screen dark"><div class="content" style="justify-content:center">
+      <div class="glass">
+        <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('calendar', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">List your ground</h1></div></div>
+        <p class="muted" style="margin-top:-8px">Your own booking page. Customers pay you directly by UPI. No commission per booking.</p>
+        <div class="feature-list">${[['user', 'Sign in with Google', 'No new password. Your phone already has a Gmail account.'], ['settings', 'Add prices, photos and UPI ID', 'Takes about five minutes.'], ['check', 'We switch on bookings', 'GoArena checks new grounds, usually within a day.']]
+          .map(([ic, t, d]) => h`<div class="feature"><div class="circle soft">${icon(ic, 20)}</div><div><div class="strong">${t}</div><div class="small muted">${d}</div></div></div>`)}</div>
+        <div data-google class="col gap12"><div id="gbtn" class="gbtn"><p class="small muted center">Loading Google sign-in…</p></div></div>
+        <div class="form-error banner red hidden" id="gerr" role="alert"></div>
+        <p class="small muted center">Already set up? <a class="link" href="/login" data-go="/login" style="color:#4ade80">Log in</a></p>
+      </div></div></div>`);
+    googleButton('gbtn', (c) => { credential = c; step2(); }, { text: 'signup_with', dark: true }).then((ok) => {
+      if (!ok && document.getElementById('gbtn')) document.getElementById('gbtn').innerHTML = '<p class="small muted center">Sign-up opens soon. Ask GoArena to set up your ground.</p>';
+    });
+  };
+  const step2 = () => {
+    render(h`<div class="screen">${topbar('Your ground', '/signup')}
+      <form class="content" data-form="signup" novalidate>
+        <div class="field"><label for="groundName">Ground name</label><input class="input" id="groundName" name="groundName" placeholder="e.g. Kick Off Arena" required></div>
+        <div class="field"><label for="area">Area</label><input class="input" id="area" name="area" placeholder="e.g. Kakkanad, Kochi"></div>
+        <div class="field"><label>Courts</label><div class="seg">
+          <label><input type="radio" name="layout" value="split" checked><span>Full ground + 2 halves</span></label>
+          <label><input type="radio" name="layout" value="single"><span>One ground</span></label></div>
+          <p class="small muted">Full + halves means the full ground (8-a-side) or either half (5-a-side) can be booked.</p></div>
+        <div class="field"><label for="ownerName">Your name</label><input class="input" id="ownerName" name="ownerName" value="${googleName(credential)}" required></div>
+        <div class="field"><label for="phone">Your phone number</label><input class="input" id="phone" name="phone" type="tel" inputmode="numeric" required>
+          <p class="small muted">Customers will call or WhatsApp this number.</p></div>
+        <div class="field"><label for="pin">Backup PIN (4–6 digits)</label><input class="input" id="pin" name="pin" type="password" inputmode="numeric" maxlength="6" required>
+          <p class="small muted">Lets you log in with phone + PIN if Google isn't available.</p></div>
+        <div class="form-error banner red hidden" role="alert"></div>
+        <button class="btn primary" type="submit">Create my ground</button>
+      </form></div>`, {
+      forms: {
+        signup: async (f) => {
+          await api('POST', '/api/auth/signup', { ...f, credential }, { noRedirect: true });
+          toast('Ground created. Now add your prices, photos and UPI ID.');
+          go('/owner/settings', true);
+        },
       },
+    });
+  };
+  step1();
+}
+
+// ---------------------------------------------------------------- GoArena admin: approve new grounds
+async function adminPage() {
+  let data;
+  try { data = await api('GET', '/api/admin/grounds', undefined, { noRedirect: true }); }
+  catch (e) {
+    if (e.status !== 401) throw e;
+    render(h`<div class="screen dark"><div class="content" style="justify-content:center"><div class="glass">
+      <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Admin</h1></div></div>
+      <p class="muted" style="margin-top:-8px">Sign in with the Gmail listed as a GoArena admin.</p>
+      <div data-google><div id="gbtn" class="gbtn"><p class="small muted center">Loading Google sign-in…</p></div></div>
+      <div class="form-error banner red hidden" id="gerr" role="alert"></div></div></div></div>`);
+    googleButton('gbtn', async (credential) => {
+      try { await api('POST', '/api/admin/login', { credential }, { noRedirect: true }); route(); }
+      catch (err) { showError('gerr', err.message); }
+    }, { text: 'signin_with', dark: true });
+    return;
+  }
+  const waiting = data.grounds.filter((g) => !g.approved), live = data.grounds.filter((g) => g.approved);
+  const row = (g) => h`<div class="card">
+    <div class="row between top"><div class="col" style="gap:2px"><div class="heading">${g.name}</div><div class="small muted">${[g.area, `/${g.slug}`].filter(Boolean).join(' · ')}</div></div>
+      <a class="link" href="/${g.slug}" target="_blank" rel="noopener">Open</a></div>
+    <div class="small">${g.owner || '—'} · <a class="link" href="tel:+91${g.phone}">${g.phone}</a>${g.email ? ` · ${g.email}` : ''}</div>
+    <div class="small muted">Signed up ${new Date(g.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · ${g.photos} photos · ${g.hasUpi ? 'UPI ID added' : 'no UPI ID yet'}</div>
+    ${g.approved ? '' : h`<div class="btn-row"><button class="btn danger" data-act="reject" data-id="${g.id}" data-name="${g.name}">Turn down</button><button class="btn primary" data-act="approve" data-id="${g.id}">Approve</button></div>`}</div>`;
+  render(h`<div class="screen"><div class="content tight" style="padding-top:20px">
+    <div class="col"><span class="eyebrow">${data.email}</span><h1 class="display">New grounds</h1></div>
+    ${waiting.length ? waiting.map(row) : h`<div class="empty">No grounds waiting for approval.</div>`}
+    <div class="section-title">Live (${live.length})</div>
+    ${live.map(row)}
+  </div></div>`, {
+    actions: {
+      approve: async (el) => { await api('POST', `/api/admin/grounds/${el.dataset.id}/approve`); toast('Approved. Customers can book now.'); route(); },
+      reject: async (el) => { if (!confirm(`Turn down ${el.dataset.name}? Its page and logins stop working.`)) return; await api('POST', `/api/admin/grounds/${el.dataset.id}/reject`); route(); },
     },
   });
 }
@@ -619,6 +755,8 @@ async function ownerToday() {
       <div class="stats">
         <div class="card"><span class="small muted">Bookings today</span><span class="title">${t.bookingsToday}</span></div>
         <div class="card"><span class="small muted">This week</span><span class="title">${money(t.weekTotal)}</span></div></div>
+      ${me.ground.approved ? '' : h`<div class="banner amber">${icon('clock', 20)}<div><div class="strong">Waiting for GoArena to switch on bookings</div>
+        <div>Customers can see your page but can't book yet. Meanwhile, in <a class="link" href="/owner/settings" data-go="/owner/settings">Settings</a>: ${[me.ground.upiSet ? null : 'add your UPI ID', 'check your prices', 'add photos'].filter(Boolean).join(', ')}.</div></div></div>`}
       ${(t.refunds || []).map((b) => h`<div class="banner red" style="align-items:center">${icon('x', 20)}<div class="grow"><div class="strong">Refund ${money(b.amount)} to ${b.name}</div>
           <div>${b.phone} · paid online after the ${hourLabel(b.hour)} ${dayShort(b.date)} slot was taken. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).</div></div>
           <button class="btn small danger" style="background:#fff" data-act="refunded" data-id="${b.id}">Done</button></div>`)}
@@ -775,8 +913,28 @@ async function ownerCalendar() {
   }
 }
 
+// "Sign in with Google" card, shared by owner Settings and the helper page.
+const googleCard = (me) => !me.googleClientId ? '' : me.me.googleEmail
+  ? h`<div class="card"><div class="row gap12"><div class="circle soft" style="width:40px;height:40px">${icon('check', 20)}</div>
+      <div class="grow"><div class="heading">Google sign-in is on</div><div class="small muted" style="overflow-wrap:anywhere">${me.me.googleEmail}</div></div>
+      <button class="link red" data-act="googleOff">Remove</button></div>
+      <p class="small muted">Your phone and PIN still work as a backup.</p></div>`
+  : h`<div class="card"><div class="heading">Log in with Google</div>
+      <p class="small muted">Skip the PIN next time. Link the Gmail account on this phone, then just tap "Continue with Google".</p>
+      <div id="glink" class="gbtn"></div><div class="form-error banner red hidden" id="gerr" role="alert"></div></div>`;
+const googleActions = {
+  googleOff: async () => { if (!confirm('Turn off Google sign-in? You will log in with phone and PIN.')) return; await api('DELETE', '/api/staff/google'); toast('Google sign-in removed'); route(); },
+};
+function mountGoogleLink(me) {
+  if (!me.googleClientId || me.me.googleEmail) return;
+  googleButton('glink', async (credential) => {
+    try { const r = await api('POST', '/api/staff/google', { credential }); toast(`Linked ${r.email}`); route(); }
+    catch (e) { showError('gerr', e.message); }
+  }, { text: 'continue_with' });
+}
+
 async function ownerSettings() {
-  const s = await api('GET', '/api/owner/settings');
+  const [s, me] = await Promise.all([api('GET', '/api/owner/settings'), api('GET', '/api/me')]);
   const g = s.ground, rz = s.razorpay;
   const link = `${s.publicUrl || location.origin}/${g.slug}`;
   const qrImg = qrPng(link, 12, 4);
@@ -852,6 +1010,8 @@ async function ownerSettings() {
           <div class="field"><label>PIN for the helper (4–6 digits)</label><input class="input" name="pin" inputmode="numeric" maxlength="6"></div>
           <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Add helper</button></form></div>
 
+      ${googleCard(me)}
+
       <form class="card" data-form="pin"><div class="heading">Your PIN</div>
         <div class="grid2"><div class="field"><label>Current PIN</label><input class="input" name="current" type="password" inputmode="numeric" maxlength="6"></div>
           <div class="field"><label>New PIN</label><input class="input" name="pin" type="password" inputmode="numeric" maxlength="6"></div></div>
@@ -864,6 +1024,7 @@ async function ownerSettings() {
       copyOrigin: () => copy(s.publicUrl || location.origin, 'Website address copied'),
       rzpDisconnect: async () => { if (!confirm('Disconnect Razorpay? Customers will pay by UPI + screenshot again.')) return; await api('DELETE', '/api/owner/razorpay'); toast('Razorpay disconnected'); route(); },
       logout,
+      ...googleActions,
       delPhoto: async (el) => { if (!confirm('Delete this photo?')) return; await api('DELETE', `/api/owner/photos/${el.dataset.id}`); route(); },
       delHelper: async (el) => { if (!confirm(`Remove ${el.dataset.name}? They will be logged out.`)) return; await api('DELETE', `/api/owner/helpers/${el.dataset.id}`); route(); },
     },
@@ -903,6 +1064,7 @@ async function ownerSettings() {
       pin: async (f, form) => { await api('POST', '/api/staff/pin', f); form.reset(); toast('PIN changed'); },
     },
   });
+  mountGoogleLink(me);
 }
 
 // ---------------------------------------------------------------- helper
@@ -921,10 +1083,12 @@ async function helperPage() {
           <div class="small muted">${[b.unit, b.phone, b.walkin ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
           ${b.phone ? h`<a class="call" href="tel:+91${b.phone}" aria-label="Call ${b.name}">${icon('phone', 20)}</a>` : ''}</div>`)}</div>`)
         : h`<div class="empty">No bookings in the next 7 days yet.</div>`}
+      ${me.me.role === 'helper' ? googleCard(me) : ''}
     </div>
     <div class="footer plain">${me.me.role === 'owner' ? h`<button class="btn secondary" data-go="/owner">Back to owner view</button>` : h`<button class="btn secondary" data-act="logout">Log out</button>`}</div>
-  </div>`, { actions: { refresh: () => route(), logout } });
-  every(60000, () => route());
+  </div>`, { actions: { refresh: () => route(), logout, ...googleActions } });
+  if (me.me.role === 'helper') mountGoogleLink(me);
+  every(60000, () => { if (!document.querySelector('#glink iframe')) route(); });
 }
 
 route();

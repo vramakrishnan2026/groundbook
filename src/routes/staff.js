@@ -22,7 +22,12 @@ const ownerView = (b, units) => ({ id: b.id, ...publicBooking(b, units), hasProo
 // ---------- shared ----------
 export async function me(env, me) {
   const g = await groundById(env.DB, me.ground_id);
-  return json({ me: { name: me.name, role: me.role, phone: me.phone }, ground: groundPublic(g) });
+  const row = await env.DB.prepare('SELECT google_email FROM staff WHERE id = ?').bind(me.id).first();
+  return json({
+    me: { name: me.name, role: me.role, phone: me.phone, googleEmail: row.google_email || null },
+    ground: { ...groundPublic(g), approved: !!g.approved, upiSet: !!g.upi_id },
+    googleClientId: env.GOOGLE_CLIENT_ID || null,
+  });
 }
 
 // ---------- owner: Today ----------

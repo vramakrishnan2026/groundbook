@@ -1,11 +1,12 @@
 // GoArena — Cloudflare Worker entry point.
 // Static files (the app) are served by Workers Assets; everything under /api comes here.
-import { login, logout, requireStaff } from './lib/auth.js';
+import { adminLogin, login, loginWithGoogle, logout, requireAdmin, requireStaff } from './lib/auth.js';
 import { sweepExpired } from './lib/bookings.js';
 import { reconcileRecent } from './lib/razorpay.js';
 import { HttpError, json, readJson } from './lib/util.js';
 import * as pub from './routes/public.js';
 import * as st from './routes/staff.js';
+import * as acc from './routes/accounts.js';
 
 // [method, pattern, handler(env, request, url, params)]
 const routes = [
@@ -28,6 +29,20 @@ const routes = [
     const { staff, setCookie } = await login(env.DB, req, await readJson(req));
     return json({ role: staff.role, ground: staff.ground_name }, 200, { 'set-cookie': setCookie });
   }],
+  ['GET', '/api/config', async (env) => acc.config(env)],
+  ['POST', '/api/auth/google', async (env, req) => {
+    const { staff, setCookie } = await loginWithGoogle(env, req, await readJson(req));
+    return json({ role: staff.role, ground: staff.ground_name }, 200, { 'set-cookie': setCookie });
+  }],
+  ['POST', '/api/auth/signup', (env, req) => acc.signup(env, req)],
+  ['POST', '/api/staff/google', staff(['owner', 'helper'], (env, me, req) => acc.linkGoogle(env, me, req))],
+  ['DELETE', '/api/staff/google', staff(['owner', 'helper'], (env, me) => acc.unlinkGoogle(env, me))],
+
+  // GoArena admin
+  ['POST', '/api/admin/login', async (env, req) => json({ ok: true }, 200, { 'set-cookie': await adminLogin(env, req, await readJson(req)) })],
+  ['GET', '/api/admin/grounds', async (env, req) => acc.adminGrounds(env, await requireAdmin(env, req))],
+  ['POST', '/api/admin/grounds/:id/approve', async (env, req, url, p) => { await requireAdmin(env, req); return acc.adminDecide(env, p.id, true); }],
+  ['POST', '/api/admin/grounds/:id/reject', async (env, req, url, p) => { await requireAdmin(env, req); return acc.adminDecide(env, p.id, false); }],
   ['POST', '/api/auth/logout', async (env, req) => json({ ok: true }, 200, { 'set-cookie': await logout(env.DB, req) })],
   ['GET', '/api/me', staff(['owner', 'helper'], (env, me) => st.me(env, me))],
 

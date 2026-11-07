@@ -12,6 +12,7 @@
 // For a ground with a single pitch, use --single 1000,1200 instead of --full/--half.
 // Prices are weekday,weekend in rupees per hour.
 import { hashPin } from '../src/lib/util.js';
+import { RESERVED_SLUGS as RESERVED } from '../src/routes/accounts.js';
 
 const args = {};
 for (let i = 2; i < process.argv.length; i += 2) args[process.argv[i].replace(/^--/, '')] = process.argv[i + 1];
@@ -32,7 +33,6 @@ const prices = (s) => {
 
 const slug = need('slug').toLowerCase();
 if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) throw new Error('slug: lowercase letters, numbers and dashes only');
-const RESERVED = ['g', 'b', 'api', 'login', 'owner', 'helper', 'img', 'vendor', 'admin', 'www', 'app', 'static'];
 if (RESERVED.includes(slug)) throw new Error(`slug "${slug}" is reserved, pick another`);
 const phone = need('phone').replace(/\D/g, '').slice(-10);
 if (!/^[6-9]\d{9}$/.test(phone)) throw new Error('phone must be a 10-digit Indian mobile number');

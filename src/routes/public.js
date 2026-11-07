@@ -30,6 +30,7 @@ export function groundPublic(g) {
     openHour: g.open_hour,
     closeHour: g.close_hour,
     holdMinutes: g.hold_minutes,
+    open: !!g.approved,
   };
 }
 
@@ -62,6 +63,7 @@ export async function getSlots(env, slug, url) {
 export async function createHold(env, slug, request) {
   const db = env.DB;
   const g = await groundBySlug(db, slug);
+  if (!g.approved) throw new HttpError(403, "This ground isn't taking online bookings yet. Please call the ground.", 'not_open');
   const body = await readJson(request);
   const name = cleanName(body.name);
   const phone = cleanPhone(body.phone);

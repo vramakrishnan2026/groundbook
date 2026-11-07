@@ -255,3 +255,18 @@ body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-even
 .screen.dark .input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #fff; }
 .screen.dark .input:focus { background: rgba(255,255,255,.12); border-color: #4ade80; }
 .screen.dark .glass { background: rgba(15,23,42,.45); border: 1px solid rgba(255,255,255,.12); border-radius: 24px; padding: 24px; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 20px; }
+
+/* Sign in with Google */
+.gbtn { min-height: 44px; display: flex; justify-content: center; align-items: center; width: 100%; color-scheme: light; }
+.gbtn iframe { margin: 0 auto !important; }
+.or { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: .35; }
+.screen.dark .or { color: rgba(255,255,255,.6); }
+.gap8 { gap: 8px; }
+/* radio buttons drawn as a segmented control */
+.seg label { flex: 1; cursor: pointer; }
+.seg label input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label span { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 44px; padding: 6px 8px; border: 1.5px solid transparent; border-radius: var(--r-md); font-size: 13px; font-weight: 600; }
+.seg label input:checked + span { background: var(--bg); border-color: var(--primary); color: var(--primary); }
+.seg label input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+.screen.dark .feature .strong { color: #fff; }

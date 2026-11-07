@@ -1,5 +1,6 @@
 // Owner / helper login with phone + PIN. Sessions live in D1; the browser holds an HttpOnly cookie.
 import { HttpError, cleanPhone, randomToken, sha256, verifyPin } from './util.js';
+import { isAdminEmail, verifyGoogle } from './google.js';
 
 const COOKIE = 'gb_session';
 const SESSION_DAYS = 30;
@@ -48,16 +49,35 @@ export async function login(db, request, { phone, pin }) {
       .run();
     throw new HttpError(401, 'Wrong phone number or PIN', 'bad_login');
   }
+  await db.prepare('DELETE FROM login_attempts WHERE key = ?').bind(p).run();
+  return { staff, setCookie: await startSession(db, request, staff.id) };
+}
+
+export async function startSession(db, request, staffId) {
+  const now = Date.now();
   const token = randomToken(32);
   await db.batch([
-    db.prepare('DELETE FROM login_attempts WHERE key = ?').bind(p),
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
-    db
-      .prepare('INSERT INTO sessions (token_hash, staff_id, expires_at) VALUES (?,?,?)')
-      .bind(await sha256(token), staff.id, now + SESSION_DAYS * 86400000),
+    db.prepare('INSERT INTO sessions (token_hash, staff_id, expires_at) VALUES (?,?,?)').bind(await sha256(token), staffId, now + SESSION_DAYS * 86400000),
   ]);
   const secure = new URL(request.url).protocol === 'https:';
-  return { staff, setCookie: cookieHeader(token, SESSION_DAYS * 86400, secure) };
+  return cookieHeader(token, SESSION_DAYS * 86400, secure);
+}
+
+// Log in with a Google account that was linked earlier (Settings → Sign in with Google).
+export async function loginWithGoogle(env, request, { credential }) {
+  const who = await verifyGoogle(env, credential);
+  const staff = await env.DB
+    .prepare(
+      `SELECT s.*, g.name AS ground_name, g.slug FROM staff s JOIN grounds g ON g.id = s.ground_id
+        WHERE s.google_sub = ? AND s.active = 1 AND g.active = 1 ORDER BY s.role = 'owner' DESC, s.id LIMIT 1`
+    )
+    .bind(who.sub)
+    .first();
+  if (!staff) {
+    throw new HttpError(404, `${who.email || 'This Google account'} isn't linked to a ground yet. Log in with your phone and PIN once, then turn on Google sign-in in Settings. New ground? Tap "List your ground".`, 'not_linked');
+  }
+  return { staff, setCookie: await startSession(env.DB, request, staff.id) };
 }
 
 export async function logout(db, request) {
@@ -82,4 +102,25 @@ export async function requireStaff(db, request, roles = ['owner', 'helper']) {
   if (!s) throw new HttpError(401, 'Please log in', 'auth');
   if (!roles.includes(s.role)) throw new HttpError(403, 'Not allowed', 'forbidden');
   return s;
+}
+
+// ---------- GoArena admin (approves new grounds). Admins are listed in the ADMIN_EMAILS variable.
+const ADMIN_COOKIE = 'gb_admin';
+
+export async function adminLogin(env, request, { credential }) {
+  const who = await verifyGoogle(env, credential);
+  if (!isAdminEmail(env, who.email)) throw new HttpError(403, `${who.email} is not a GoArena admin`, 'forbidden');
+  const token = randomToken(32);
+  await env.DB.prepare('INSERT INTO admin_sessions (token_hash, email, expires_at) VALUES (?,?,?)')
+    .bind(await sha256(token), who.email, Date.now() + 7 * 86400000).run();
+  const secure = new URL(request.url).protocol === 'https:';
+  return `${ADMIN_COOKIE}=${token}; Path=/api/admin; HttpOnly; SameSite=Lax; Max-Age=${7 * 86400}${secure ? '; Secure' : ''}`;
+}
+
+export async function requireAdmin(env, request) {
+  const raw = request.headers.get('cookie') || '';
+  const m = raw.match(new RegExp(`(?:^|;\\s*)${ADMIN_COOKIE}=([^;]+)`));
+  const row = m && await env.DB.prepare('SELECT email FROM admin_sessions WHERE token_hash = ? AND expires_at > ?').bind(await sha256(m[1]), Date.now()).first();
+  if (!row || !isAdminEmail(env, row.email)) throw new HttpError(401, 'Please sign in as admin', 'admin_auth');
+  return row.email;
 }

@@ -32,6 +32,11 @@ custom_domain = true
 # The customer-facing address, used for the booking link and QR code in Settings.
 [vars]
 PUBLIC_URL = "https://book.goarena.in"
+# "Sign in with Google": the OAuth Web client ID from Google Cloud (it is public, not a secret).
+# Leave empty to hide all Google buttons; phone + PIN still works.
+GOOGLE_CLIENT_ID = ""
+# Gmail addresses allowed to approve new grounds at book.goarena.in/admin (comma separated).
+ADMIN_EMAILS = ""
 
 [observability]
 enabled = true
