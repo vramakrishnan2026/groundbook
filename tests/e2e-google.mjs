@@ -58,20 +58,21 @@ await p.goto(base + '/kick-off-arena'); await p.getByText('Call to book').waitFo
 // 5. Master admin
 await p.goto(base + '/admin'); await p.waitForSelector('#fake-google'); await shot('admin-login');
 await tapGoogle({ sub: 'boss', email: 'boss@gmail.com' });
-await p.getByText('Kick Off Arena').waitFor(); await shot('admin-overview');
-await p.getByRole('button', { name: 'Waiting' }).click(); await p.waitForURL(/f=waiting/); await p.getByText('Kick Off Arena').waitFor();
-await p.getByText('Kick Off Arena').click(); await p.waitForURL(/\/admin\/g\/\d+/); await shot('admin-ground-new');
+await p.locator('.only-mobile').getByText('Kick Off Arena').waitFor(); await shot('admin-overview');
+await p.getByRole('button', { name: /^Waiting approval/ }).click(); await p.waitForURL(/f=waiting/);
+await p.locator('.only-mobile').getByText('Kick Off Arena').click(); await p.waitForURL(/\/admin\/g\/\d+/); await shot('admin-ground-new');
 await p.getByRole('button', { name: 'Approve' }).click(); await p.getByText('Approved. Customers').waitFor();
 await p.goto(base + '/kick-off-arena'); await p.getByRole('button', { name: /Check free slots/ }).waitFor();
 
 // pause Green Field, record a payment that switches it back on, reset a PIN
-await p.goto(base + '/admin'); await p.getByText('Green Field Turf').click(); await p.waitForURL(/\/admin\/g\/1$/);
+await p.goto(base + '/admin'); await p.locator('.only-mobile').getByText('Green Field Turf').click(); await p.waitForURL(/\/admin\/g\/1$/);
 await p.locator('form[data-form=service] label').filter({ hasText: 'Bookings paused' }).click();
 await p.fill('form[data-form=service] input[name=note]', 'November invoice of ₹500 is unpaid');
 await p.getByRole('button', { name: 'Save service' }).click(); await p.getByText('Service: Bookings paused').waitFor();
 await shot('admin-ground-paused');
 await p.goto(base + '/demo'); await p.getByText('Call to book').waitFor();
 await p.goto(base + '/admin/g/1');
+await p.check('.switch input'); await p.getByText('Record a payment').waitFor();
 await p.locator('form[data-form=payment]').scrollIntoViewIfNeeded(); await shot('admin-payment');
 await p.fill('form[data-form=payment] input[name=note]', 'GPay 4128'); await p.getByRole('button', { name: 'Record payment' }).click();
 await p.getByText(/^Paid until/).first().waitFor();
