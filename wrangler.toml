@@ -23,6 +23,12 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["*/5 * * * *"]
 
+# Custom domain (also visible in Workers → groundbook → Domains). Keeping it here means
+# deploys from GitHub never detach it.
+[[routes]]
+pattern = "book.goarena.in"
+custom_domain = true
+
 # The customer-facing address, used for the booking link and QR code in Settings.
 [vars]
 PUBLIC_URL = "https://book.goarena.in"
