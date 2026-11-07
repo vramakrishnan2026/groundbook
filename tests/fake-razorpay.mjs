@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
 export const KEY_ID = 'rzp_test_AbC123xyz', KEY_SECRET = 'S3cretKeyValue0123';
 
 export function fakeRazorpay() {
-  const orders = {}, payments = {};
+  const orders = {}, payments = {}, refunds = {};
   let n = 0;
   const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fetchFn = async (url, init) => {
@@ -20,6 +20,17 @@ export function fakeRazorpay() {
       return reply(200, orders[id]);
     }
     if ((m = path.match(/^\/orders\/([^/]+)\/payments$/))) return reply(200, { items: Object.values(payments).filter((p) => p.order_id === m[1]) });
+    if ((m = path.match(/^\/payments\/([^/]+)\/refund$/))) {
+      const p = payments[m[1]];
+      if (!p || p.status !== 'captured') return reply(400, { error: { description: 'The payment has not been captured' } });
+      const body = JSON.parse(init.body || '{}');
+      const already = (p.refunds || []).reduce((a, r) => a + r.amount, 0);
+      if (already + body.amount > p.amount) return reply(400, { error: { description: 'The total refund amount is greater than the refund payment amount' } });
+      const r = { id: `rfnd_${Object.keys(refunds).length + 1}`, payment_id: p.id, amount: body.amount, status: 'processed' };
+      refunds[r.id] = r; p.refunds = [...(p.refunds || []), r]; p.refund_status = already + body.amount === p.amount ? 'full' : 'partial';
+      return reply(200, r);
+    }
+    if ((m = path.match(/^\/refunds\/([^/]+)$/))) return refunds[m[1]] ? reply(200, refunds[m[1]]) : reply(404, { error: { description: 'not found' } });
     if ((m = path.match(/^\/payments\/([^/]+)\/capture$/))) { payments[m[1]].status = 'captured'; return reply(200, payments[m[1]]); }
     if ((m = path.match(/^\/payments\/([^/]+)$/))) return payments[m[1]] ? reply(200, payments[m[1]]) : reply(404, { error: { description: 'not found' } });
     return reply(404, { error: { description: 'unknown ' + path } });
@@ -32,6 +43,6 @@ export function fakeRazorpay() {
     const signature = createHmac('sha256', KEY_SECRET).update(`${orderId}|${id}`).digest('hex');
     return { razorpay_order_id: orderId, razorpay_payment_id: id, razorpay_signature: signature };
   };
-  return { fetchFn, pay, payments };
+  return { fetchFn, pay, payments, refunds };
 }
 

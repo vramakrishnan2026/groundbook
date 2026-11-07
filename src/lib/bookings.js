@@ -154,5 +154,6 @@ export function publicBooking(b, units) {
     note: b.note,
     paidVia: b.paid_via || null,
     refundNeeded: !!b.refund_needed,
+    refund: b.refund_amount != null ? { amount: b.refund_amount, status: b.refund_status, at: b.refunded_at } : null,
   };
 }

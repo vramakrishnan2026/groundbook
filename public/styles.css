@@ -361,3 +361,4 @@ form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
 /* Demo grounds */
 .pill.blue { background: #dbeafe; color: #1d4ed8; }
 .banner.blue { background: #eff6ff; color: #1e40af; }
+.radio-row input.input { width: 120px; height: 40px; min-height: 40px; margin-left: auto; padding: 0 12px; appearance: auto; -webkit-appearance: none; border-radius: var(--r-md); }

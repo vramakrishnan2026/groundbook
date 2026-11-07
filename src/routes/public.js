@@ -1,11 +1,12 @@
 // Customer-facing API: no login. A booking is reached through its secret token.
 import {
-  ACTIVE, availability, bookableDates, closeBooking, groundBySlug, hoursOf, insertBooking,
+  ACTIVE, availability, bookableDates, closeBooking, groundById, groundBySlug, hoursOf, insertBooking,
   isPastSlot, priceFor, publicBooking, sweepExpired, unitsWithPrices,
 } from '../lib/bookings.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { createOrder, groundKeys, markPaidOnline, paidPayment, reconcile, signatureOk } from '../lib/razorpay.js';
 import { countVisit } from '../lib/tracking.js';
+import { cancelWithRefund, customerCanCancel } from '../lib/refunds.js';
 import { HttpError, bad, cleanName, cleanPhone, cleanUtr, dayType, int, isDate, json, readJson } from '../lib/util.js';
 
 const MAX_HOLDS_PER_PHONE = 2;
@@ -31,6 +32,7 @@ export function groundPublic(g) {
     openHour: g.open_hour,
     closeHour: g.close_hour,
     holdMinutes: g.hold_minutes,
+    cancelHours: g.cancel_hours,
     open: !!g.approved && g.service === 'active',
     demo: !!g.is_demo,
     closedNote: g.service === 'active' ? '' : 'Online booking is paused right now.',
@@ -122,7 +124,8 @@ export async function getBooking(env, token, extra = {}) {
   b = await bookingByToken(db, token);
   const units = await unitsWithPrices(db, g.id);
   return json({
-    booking: { ...publicBooking(b, units), serverNow: Date.now(), hasProof: !!b.proof_key },
+    booking: { ...publicBooking(b, units), serverNow: Date.now(), hasProof: !!b.proof_key, canCancel: customerCanCancel(b, g) },
+    policy: { cancelHours: g.cancel_hours },
     ground: groundPublic(g),
     payment: {
       upiId: g.upi_id,
@@ -219,6 +222,17 @@ export async function submitProof(env, token, request) {
 
 export async function cancelByCustomer(env, token) {
   const b = await bookingByToken(env.DB, token);
+  if (b.status === 'CONFIRMED') {
+    // Paid online and still inside the free-cancellation window → cancel and refund in full, automatically.
+    const g = await groundById(env.DB, b.ground_id);
+    if (!customerCanCancel(b, g)) {
+      throw new HttpError(409, g.cancel_hours && b.paid_via === 'razorpay'
+        ? `Free cancellation ends ${g.cancel_hours} hours before the slot. Please contact the ground.`
+        : 'Please contact the ground to cancel this booking.', 'cannot_cancel');
+    }
+    await cancelWithRefund(env, b, g, { refund: 'full', note: 'Cancelled by customer' });
+    return getBooking(env, token);
+  }
   const changed = await closeBooking(env.DB, b.id, 'CANCELLED', ['HOLD'], { note: 'Cancelled by customer' });
   if (!changed) throw new HttpError(409, 'Only a booking waiting for payment can be cancelled here. Please contact the ground.', 'cannot_cancel');
   return getBooking(env, token);

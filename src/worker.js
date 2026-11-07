@@ -83,6 +83,7 @@ const routes = [
   ['GET', '/api/owner/bookings/:id/proof', staff(['owner'], (env, me, req, url, p) => st.proof(env, me, p.id))],
   ['POST', '/api/owner/bookings/:id/approve', staff(['owner'], (env, me, req, url, p) => st.approve(env, me, p.id))],
   ['POST', '/api/owner/bookings/:id/reject', staff(['owner'], (env, me, req, url, p) => st.reject(env, me, p.id, req))],
+  ['POST', '/api/owner/bookings/:id/refund-status', staff(['owner'], (env, me, req, url, p) => st.refundStatus(env, me, p.id))],
   ['POST', '/api/owner/bookings/:id/cancel', staff(['owner'], (env, me, req, url, p) => st.cancel(env, me, p.id, req))],
   ['GET', '/api/owner/calendar', staff(['owner'], (env, me, req, url) => st.calendar(env, me, url))],
   ['POST', '/api/owner/slots', staff(['owner'], (env, me, req) => st.addSlot(env, me, req))],

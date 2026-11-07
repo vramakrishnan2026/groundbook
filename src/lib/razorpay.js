@@ -173,3 +173,16 @@ export async function listPayments(env, keys, count = 25) {
   const data = await call(env, keys.keyId, keys.keySecret, 'GET', `/payments?count=${Math.min(Math.max(count, 1), 100)}`);
   return data.items || [];
 }
+
+// Refund (part of) a captured payment. amount is in rupees.
+export async function refundPayment(env, keys, paymentId, amount, notes = {}) {
+  const r = await call(env, keys.keyId, keys.keySecret, 'POST', `/payments/${paymentId}/refund`, {
+    amount: Math.round(amount * 100), speed: 'normal', notes,
+  });
+  return { id: r.id, status: r.status || 'pending', amount: Math.round((r.amount || 0) / 100) };
+}
+
+export async function fetchRefund(env, keys, refundId) {
+  const r = await call(env, keys.keyId, keys.keySecret, 'GET', `/refunds/${refundId}`);
+  return { id: r.id, status: r.status || 'pending' };
+}

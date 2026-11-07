@@ -7,7 +7,8 @@ import {
   int, isDate, json, localNow, mondayOf, readJson, verifyPin,
 } from '../lib/util.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
-import { checkKeys, encryptSecret, keyMode } from '../lib/razorpay.js';
+import { checkKeys, encryptSecret, fetchRefund, groundKeys, keyMode } from '../lib/razorpay.js';
+import { cancelWithRefund } from '../lib/refunds.js';
 import { groundPublic, photoUrls, serveObject } from './public.js';
 
 
@@ -116,9 +117,13 @@ export async function cancel(env, me, id, request) {
   const body = await readJson(request).catch(() => ({}));
   const b = await bookingFor(env.DB, me, id);
   const note = cleanText(body.reason, 140) || (b.kind === 'block' ? 'Unblocked' : 'Cancelled by ground');
-  const changed = await closeBooking(env.DB, b.id, 'CANCELLED', ['CONFIRMED', 'PENDING', 'HOLD'], { by: me.id, note });
-  if (!changed) throw new HttpError(409, statusMessage(b.status), 'cannot_cancel');
-  return getOne(env, me, id);
+  if (!['CONFIRMED', 'PENDING', 'HOLD'].includes(b.status)) throw new HttpError(409, statusMessage(b.status), 'cannot_cancel');
+  const g = await groundById(env.DB, me.ground_id);
+  // The ground is cancelling, so a paid customer gets everything back unless the owner says otherwise.
+  const { refund } = await cancelWithRefund(env, b, g, { refund: body.refund ?? 'full', by: me.id, note });
+  const res = await getOne(env, me, id);
+  const data = await res.json();
+  return json({ ...data, refund });
 }
 
 function statusMessage(s) {
@@ -128,6 +133,19 @@ function statusMessage(s) {
     EXPIRED: 'The customer ran out of time, so the slot was released.',
     CANCELLED: 'This booking was cancelled.',
   }[s] || 'This booking can no longer be changed.';
+}
+
+export async function refundStatus(env, me, id) {
+  // Ask Razorpay whether a pending refund has reached the customer yet.
+  const b = await bookingFor(env.DB, me, id);
+  if (!b.rzp_refund_id) return getOne(env, me, id);
+  const g = await groundById(env.DB, me.ground_id);
+  const keys = await groundKeys(env, { ...g, rzp_enabled: 1 });
+  if (keys) {
+    const r = await fetchRefund(env, keys, b.rzp_refund_id);
+    await env.DB.prepare('UPDATE bookings SET refund_status = ? WHERE id = ?').bind(r.status, b.id).run();
+  }
+  return getOne(env, me, id);
 }
 
 // ---------- owner: Calendar ----------
@@ -278,13 +296,15 @@ export async function saveSettings(env, me, request) {
     const upi = x.upiId === undefined ? g.upi_id : cleanText(x.upiId, 80);
     if (upi && !/^[\w.\-]{2,}@[a-zA-Z][\w.\-]*$/.test(upi)) throw bad('That UPI ID does not look right', 'upiId');
     const wa = x.whatsapp === undefined ? g.whatsapp : x.whatsapp === '' ? '' : cleanPhone(x.whatsapp);
+    const cancelHours = x.cancelHours === undefined ? g.cancel_hours : int(x.cancelHours, 'cancellation window');
+    if (cancelHours < 0 || cancelHours > 168) throw bad('Free cancellation must be between 0 and 168 hours before the slot', 'cancelHours');
     const facilities = Array.isArray(x.facilities)
       ? x.facilities.map((f) => cleanText(f, 30)).filter(Boolean).slice(0, 12)
       : JSON.parse(g.facilities || '[]');
     stmts.push(
       db.prepare(
         `UPDATE grounds SET name = ?, area = ?, maps_url = ?, about = ?, whatsapp = ?, upi_id = ?, upi_name = ?,
-            facilities = ?, open_hour = ?, close_hour = ?, hold_minutes = ? WHERE id = ?`
+            facilities = ?, open_hour = ?, close_hour = ?, hold_minutes = ?, cancel_hours = ? WHERE id = ?`
       ).bind(
         x.name === undefined ? g.name : cleanName(x.name, 'ground name', 80),
         x.area === undefined ? g.area : cleanText(x.area, 80),
@@ -292,7 +312,7 @@ export async function saveSettings(env, me, request) {
         x.about === undefined ? g.about : cleanText(x.about, 400),
         wa, upi,
         x.upiName === undefined ? g.upi_name : cleanText(x.upiName, 60),
-        JSON.stringify(facilities), open, close, hold, g.id
+        JSON.stringify(facilities), open, close, hold, cancelHours, g.id
       )
     );
   }

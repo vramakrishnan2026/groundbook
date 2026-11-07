@@ -477,7 +477,15 @@ async function bookingPage(token) {
     <div class="content" style="align-items:center;text-align:center;gap:24px;padding-top:24px">
       ${circle}<div class="col" style="gap:8px;align-items:center"><h1 class="display">${title}</h1><p class="muted">${text}</p></div>
       <div style="width:100%;text-align:left" class="col gap16">${extra}${summary}</div></div>
-    <div class="footer plain">${footer}</div></div>`, { actions: { book: () => go(`/${g.slug}`), copyLink: () => copy(location.href, 'Link copied') } });
+    <div class="footer plain">${footer}</div></div>`, { actions: {
+      book: () => go(`/${g.slug}`), copyLink: () => copy(location.href, 'Link copied'),
+      cancelPaid: async (el) => {
+        if (!confirm(`Cancel your booking for ${fmtDate(b.date)}, ${b.timeLabel}? ${money(b.amount)} will be refunded to the account you paid from.`)) return;
+        el.disabled = true;
+        try { await api('POST', `/api/b/${token}/cancel`); toast('Cancelled. Your refund is on the way.'); } catch (e) { toast(e.message); }
+        route();
+      },
+    } });
 
   if (b.status === 'HOLD') return payPage(token, data);
   if (b.status === 'PENDING') {
@@ -488,11 +496,26 @@ async function bookingPage(token) {
     return;
   }
   if (b.status === 'CONFIRMED') {
-    return result(h`<div class="circle big primary">${icon('check', 44)}</div>`, 'Booking confirmed', 'See you on the ground! Show this screen if the helper asks.', '',
+    const hrs = (data.policy && data.policy.cancelHours) || 0;
+    const startMs = Date.UTC(...b.date.split('-').map((x, i) => Number(x) - (i === 1 ? 1 : 0)), b.hour) - 330 * 60000;
+    const freeUntil = new Date(startMs - hrs * 3600000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    const policy = b.kind !== 'customer' ? '' : b.canCancel
+      ? h`<div class="card" style="gap:8px"><div class="small"><span class="strong">Free cancellation until ${freeUntil}.</span> You get the full ${money(b.amount)} back to the account you paid from.</div>
+          <button class="btn secondary" data-act="cancelPaid">Cancel and get a full refund</button></div>`
+      : h`<p class="small muted center">${b.paidVia === 'razorpay' && hrs ? `Free cancellation ends ${hrs} hours before the slot. ` : ''}To cancel or change this booking, please contact ${g.name}.</p>`;
+    return result(h`<div class="circle big primary">${icon('check', 44)}</div>`, 'Booking confirmed', 'See you on the ground! Show this screen if the helper asks.', policy,
       h`<div class="btn-row">${g.mapsUrl ? h`<a class="btn secondary" href="${g.mapsUrl}" target="_blank" rel="noopener">${icon('pin', 18)} Directions</a>` : ''}${g.whatsapp ? h`<a class="btn soft" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call ground</a>` : ''}</div>`);
   }
   if (b.status === 'REJECTED') {
     return result(h`<div class="circle big red">${icon('x', 40)}</div>`, 'Payment not accepted', `${g.name} could not confirm this payment${b.note ? `: ${b.note}` : ''}. If you paid, please contact them.`, '',
+      h`${contact}<button class="btn primary" data-act="book">Book another slot</button>`);
+  }
+  if (b.status === 'CANCELLED' && b.refund) {
+    const r = b.refund;
+    const msg = r.status === 'processed' || r.status === 'pending'
+      ? `A refund of ${money(r.amount)} has been sent to the account or UPI app you paid from. Banks usually take 5–7 working days to show it.`
+      : `${g.name} will return ${money(r.amount)} to you directly. Contact them if you don't get it within a few days.`;
+    return result(h`<div class="circle big grey">${icon('check', 40)}</div>`, 'Booking cancelled', `${b.note ? `${b.note}. ` : ''}${msg}`, '',
       h`${contact}<button class="btn primary" data-act="book">Book another slot</button>`);
   }
   if (b.refundNeeded) {
@@ -933,7 +956,7 @@ function razorpayCard(d) {
     <div class="strong small">GoArena bookings paid online</div>
     ${r.bookings.length ? h`<div class="table-scroll"><table class="mini"><thead><tr><th>Booking</th><th>Slot</th><th>Status</th><th>Razorpay</th><th></th></tr></thead><tbody>
       ${r.bookings.map((b) => h`<tr><td class="strong nowrap">${b.ref}</td><td class="nowrap small">${shortDate(b.date)} ${hourLabel(b.hour)}</td>
-        <td><span class="pill ${b.status === 'CONFIRMED' ? 'green' : b.status === 'HOLD' ? 'amber' : ''}">${b.status.toLowerCase()}</span>${b.refundNeeded ? h` <span class="pill red">refund due</span>` : ''}</td>
+        <td><span class="pill ${b.status === 'CONFIRMED' ? 'green' : b.status === 'HOLD' ? 'amber' : ''}">${b.status.toLowerCase()}</span>${b.refundNeeded ? h` <span class="pill red">refund due</span>` : ''}${b.refund ? h` <span class="pill ${b.refund.status === 'processed' ? 'green' : b.refund.status === 'failed' ? 'red' : 'amber'}">refund ${money(b.refund.amount)} ${b.refund.status}</span>` : ''}</td>
         <td class="small"><code>${b.paymentId || b.orderId}</code></td>
         <td>${b.paymentId ? '' : h`<button class="link" data-act="recheckRef" data-ref="${b.ref}">Re-check</button>`}</td></tr>`)}</tbody></table></div>`
       : h`<p class="small muted">None yet.</p>`}
@@ -1152,9 +1175,15 @@ async function ownerToday() {
       ${planBanner(me.ground)}
       ${me.ground.approved ? '' : h`<div class="banner amber">${icon('clock', 20)}<div><div class="strong">Waiting for GoArena to switch on bookings</div>
         <div>Customers can see your page but can't book yet. Meanwhile, in <a class="link" href="/owner/settings" data-go="/owner/settings">Settings</a>: ${[me.ground.upiSet ? null : 'add your UPI ID', 'check your prices', 'add photos'].filter(Boolean).join(', ')}.</div></div></div>`}
-      ${(t.refunds || []).map((b) => h`<div class="banner red" style="align-items:center">${icon('x', 20)}<div class="grow"><div class="strong">Refund ${money(b.amount)} to ${b.name}</div>
-          <div>${b.phone} · paid online after the ${hourLabel(b.hour)} ${dayShort(b.date)} slot was taken. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).</div></div>
-          <button class="btn small danger" style="background:#fff" data-act="refunded" data-id="${b.id}">Done</button></div>`)}
+      ${(t.refunds || []).map((b) => { const amt = b.refund ? b.refund.amount : b.amount;
+        const why = b.status === 'CANCELLED'
+          ? (b.refund && b.refund.status === 'failed'
+            ? `booking cancelled, but Razorpay couldn't send the refund. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).`
+            : `booking for ${hourLabel(b.hour)} ${dayShort(b.date)} was cancelled. They paid by UPI, so send it back by UPI.`)
+          : `paid online after the ${hourLabel(b.hour)} ${dayShort(b.date)} slot was taken. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).`;
+        return h`<div class="banner red" style="align-items:center">${icon('x', 20)}<div class="grow"><div class="strong">Refund ${money(amt)} to ${b.name}</div>
+          <div>${b.phone} · ${why}</div></div>
+          <button class="btn small danger" style="background:#fff" data-act="refunded" data-id="${b.id}">Done</button></div>`; })}
       ${t.pending.length ? h`<div class="col gap12">${t.pending.map((b) => h`
         <div class="pending" data-go="/owner/review/${b.id}" role="button" tabindex="0">
           <div class="circle" style="background:#fff;color:var(--amber)">${icon('clock', 20)}</div>
@@ -1170,6 +1199,34 @@ async function ownerToday() {
     },
   });
   every(30000, async () => { if (!document.querySelector('.scrim')) route(); });
+}
+
+// Owner cancels a paid customer booking: choose how much to give back.
+function cancelWithRefundSheet(b, done) {
+  const online = b.paidVia === 'razorpay';
+  openSheet(h`<form class="col gap16" data-form="cancelRefund">
+    <div class="col" style="gap:2px"><div class="title">Cancel ${b.name}'s booking</div><div class="small muted">${fmtDate(b.date)}, ${b.timeLabel} · paid ${money(b.amount)} ${online ? 'online' : 'by UPI'}</div></div>
+    <div class="col" style="gap:8px">
+      <label class="radio-row"><input type="radio" name="refund" value="full" checked><span class="small strong">Full refund</span><span class="small muted">${money(b.amount)}</span></label>
+      <label class="radio-row"><input type="radio" name="refund" value="part"><span class="small strong">Part refund</span><input class="input" name="amount" inputmode="numeric" placeholder="₹" style="max-width:110px;min-height:40px"></label>
+      <label class="radio-row"><input type="radio" name="refund" value="none"><span class="small strong">No refund</span></label>
+    </div>
+    <div class="field"><label>Reason (the customer sees this)</label><input class="input" name="reason" placeholder="e.g. Rain, ground maintenance"></div>
+    <p class="small muted">${online ? 'GoArena sends the refund through your Razorpay account. The customer gets it in 5–7 working days.' : 'This was paid to your UPI, so send the money back yourself. It will show under Refund due on your Today screen until you mark it done.'}</p>
+    <div class="form-error banner red hidden" role="alert"></div>
+    <button class="btn danger" type="submit">Cancel booking</button>
+    <button class="btn secondary" type="button" data-act="closeR">Keep booking</button></form>`, {
+    closeR: closeSheet,
+    cancelRefund: async (f) => {
+      const refund = f.refund === 'part' ? Number(f.amount) : f.refund;
+      if (f.refund === 'part' && !(refund > 0)) throw new Error('Enter the amount to refund');
+      const r = await api('POST', `/api/owner/bookings/${b.id}/cancel`, { refund, reason: f.reason });
+      closeSheet();
+      const rf = r.refund;
+      toast(!rf ? 'Booking cancelled' : rf.auto ? `Cancelled. ${money(rf.amount)} refund sent via Razorpay.` : rf.status === 'failed' ? `Cancelled, but Razorpay refused the refund: ${rf.error}. Refund it from your Razorpay dashboard.` : `Cancelled. Send ${money(rf.amount)} back by UPI.`);
+      done();
+    },
+  });
 }
 
 async function ownerReview(id) {
@@ -1272,9 +1329,14 @@ async function ownerCalendar() {
       <button class="btn secondary" data-act="close">Close</button>`, {
       close: closeSheet,
       cancelB: async () => {
-        if (!isBlock && !confirm(`Cancel ${b.name}'s booking? Remember to refund them if they paid.`)) return;
-        try { await api('POST', `/api/owner/bookings/${b.id}/cancel`, {}); closeSheet(); toast(isBlock ? 'Slot opened' : 'Booking cancelled'); route(); }
-        catch (e) { toast(e.message); }
+        if (isBlock || b.kind !== 'customer' || !b.amount) {
+          if (!isBlock && !confirm(`Cancel ${b.name}'s booking?`)) return;
+          try { await api('POST', `/api/owner/bookings/${b.id}/cancel`, { refund: 'none' }); closeSheet(); toast(isBlock ? 'Slot opened' : 'Booking cancelled'); route(); }
+          catch (e) { toast(e.message); }
+          return;
+        }
+        closeSheet();
+        cancelWithRefundSheet(b, () => route());
       },
     });
   }
@@ -1392,6 +1454,8 @@ async function ownerSettings() {
           <div class="field"><label>Opens at</label><select class="input" name="openHour">${hours.slice(0, 24).map((x) => h`<option value="${x}" ${x === g.openHour ? raw('selected') : ''}>${hourLabel(x)}</option>`)}</select></div>
           <div class="field"><label>Last slot ends</label><select class="input" name="closeHour">${hours.slice(1).map((x) => h`<option value="${x}" ${x === g.closeHour ? raw('selected') : ''}>${x === 24 ? 'Midnight' : hourLabel(x)}</option>`)}</select></div></div>
         <div class="field"><label>Hold a slot while customer pays (minutes)</label><input class="input" name="holdMinutes" inputmode="numeric" value="${g.holdMinutes}"></div>
+        <div class="field"><label>Free cancellation up to (hours before the slot)</label><input class="input" name="cancelHours" inputmode="numeric" value="${g.cancelHours ?? 24}">
+          <p class="small muted">Customers who paid online can cancel themselves until then and get a full refund automatically. 0 = they must call you.</p></div>
         <div class="form-error banner red hidden" role="alert"></div>
         <button class="btn soft" type="submit">Save ground page</button></form>
 
@@ -1456,7 +1520,7 @@ async function ownerSettings() {
       },
       payment: async (f) => { await api('PUT', '/api/owner/settings', { ground: { upiId: f.upiId.trim(), upiName: f.upiName } }); toast('Payment details saved'); },
       ground: async (f) => {
-        await api('PUT', '/api/owner/settings', { ground: { name: f.name, area: f.area, mapsUrl: f.mapsUrl, whatsapp: f.whatsapp, about: f.about, facilities: f.facilities.split(',').map((x) => x.trim()).filter(Boolean), openHour: Number(f.openHour), closeHour: Number(f.closeHour), holdMinutes: Number(f.holdMinutes) } });
+        await api('PUT', '/api/owner/settings', { ground: { name: f.name, area: f.area, mapsUrl: f.mapsUrl, whatsapp: f.whatsapp, about: f.about, facilities: f.facilities.split(',').map((x) => x.trim()).filter(Boolean), openHour: Number(f.openHour), closeHour: Number(f.closeHour), holdMinutes: Number(f.holdMinutes), cancelHours: Number(f.cancelHours) } });
         toast('Ground page saved');
       },
       helper: async (f) => { await api('POST', '/api/owner/helpers', f); toast(`${f.name} can now log in`); route(); },
