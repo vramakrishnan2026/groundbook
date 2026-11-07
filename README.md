@@ -1,4 +1,6 @@
-# GroundBook
+# GoArena
+
+Live at **https://book.goarena.in** (each ground: `book.goarena.in/<name>`). The repo and Cloudflare Worker are named `groundbook`.
 
 Commission-free online booking for football grounds.
 

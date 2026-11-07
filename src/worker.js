@@ -1,4 +1,4 @@
-// GroundBook — Cloudflare Worker entry point.
+// GoArena — Cloudflare Worker entry point.
 // Static files (the app) are served by Workers Assets; everything under /api comes here.
 import { login, logout, requireStaff } from './lib/auth.js';
 import { sweepExpired } from './lib/bookings.js';

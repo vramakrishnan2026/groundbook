@@ -66,5 +66,5 @@ export function createServer(env) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const env = await makeEnv();
-  createServer(env).listen(port, () => console.log(`GroundBook running at http://localhost:${port}  (customer: /demo, owner: /owner, helper: /helper)`));
+  createServer(env).listen(port, () => console.log(`GoArena running at http://localhost:${port}  (customer: /demo, owner: /owner, helper: /helper)`));
 }

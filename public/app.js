@@ -1,4 +1,4 @@
-// GroundBook web app — customer, owner and helper screens. Plain JavaScript, no build step.
+// GoArena web app — customer, owner and helper screens. Plain JavaScript, no build step.
 import qrcode from './vendor/qrcode.js';
 
 // QR code as a PNG data URL, drawn locally (no third-party service sees the data).
@@ -243,7 +243,7 @@ const SAMPLE_PHOTOS = ['1513609698234-16d36e4b7a65', '1650327987377-90bf6c9789fd
 function landing() {
   render(h`<div class="screen">
     <div class="hero big" style="background-image:url(/img/stadium.jpg)"><div class="shade"></div>
-      <div class="over"><div class="brand">${icon('calendar', 18)} GroundBook</div>
+      <div class="over"><div class="brand">${icon('calendar', 18)} GoArena</div>
         <h1 class="hero-title">Book your game in a minute.</h1>
         <p class="hero-sub">Scan the ground's QR, pick a slot, pay by UPI. No app, no commission.</p></div></div>
     <div class="content sheet-up">

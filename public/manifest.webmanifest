@@ -1,6 +1,6 @@
 {
-  "name": "GroundBook",
-  "short_name": "GroundBook",
+  "name": "GoArena",
+  "short_name": "GoArena",
   "start_url": "/owner",
   "display": "standalone",
   "background_color": "#ffffff",
