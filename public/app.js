@@ -143,6 +143,11 @@ function render(html, handlers = {}) {
   view.forms = handlers.forms || {};
   view.changes = handlers.changes || {};
 }
+// Scroll only the date strip sideways (scrollIntoView would also move the page).
+function centerDate() {
+  const on = document.querySelector('.date.on'), strip = on && on.parentElement;
+  if (strip) strip.scrollLeft = on.offsetLeft - strip.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+}
 const every = (ms, fn) => { const id = setInterval(fn, ms); view.cleanup.push(() => clearInterval(id)); };
 
 function go(path, replace = false) {
@@ -195,14 +200,21 @@ const ROUTES = [
   [/^\/helper\/?$/, () => helperPage()],
   [/^\/?$/, () => landing()],
 ];
+// Same screen redrawn (after an upload, picking a time, auto-refresh) keeps its scroll
+// position; going to a different screen starts at the top.
+let lastScreen = null;
 async function route() {
   view.cleanup.forEach((f) => f()); view.cleanup = [];
-  window.scrollTo(0, 0);
   const path = location.pathname;
+  const screen = path + '|' + (new URLSearchParams(location.search).get('step') || '');
+  const keepY = screen === lastScreen ? window.scrollY : 0;
+  lastScreen = screen;
+  if (!keepY) window.scrollTo(0, 0);
   for (const [re, fn] of ROUTES) {
     const m = path.match(re);
     if (m) {
       try { await fn(m); } catch (err) { if (err.status !== 401) renderError(err); }
+      if (keepY) window.scrollTo(0, keepY);
       return;
     }
   }
@@ -337,7 +349,7 @@ async function customerSlots(slug, data, q) {
       next: () => go(`/g/${slug}?${new URLSearchParams({ step: 'details', date, unit: unit.id, hour: selected })}`),
     },
   });
-  document.querySelector('.date.on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  centerDate();
 }
 
 function customerDetails(slug, data, q) {
@@ -708,7 +720,7 @@ async function ownerCalendar() {
       add: (el) => addSheet(Number(el.dataset.hour), Number(el.dataset.cell)),
     },
   });
-  document.querySelector('.date.on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  centerDate();
 
   function openBooking(b) {
     const isBlock = b.kind === 'block';
