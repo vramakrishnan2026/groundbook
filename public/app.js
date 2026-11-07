@@ -222,13 +222,25 @@ const kv = (k, v, cls = '') => h`<div class="kv ${cls}"><span>${k}</span><span>$
 const pitchArt = raw(`<svg viewBox="0 0 390 232" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="390" height="232" fill="#1C8A4B"/>${Array.from({ length: 10 }, (_, i) => `<rect x="${i * 39}" width="19.5" height="232" fill="#22985A"/>`).join('')}<g stroke="#fff" stroke-opacity=".85" stroke-width="3" fill="none"><rect x="28" y="34" width="334" height="166" rx="4"/><path d="M195 34v166"/><circle cx="195" cy="117" r="30"/><rect x="28" y="79" width="40" height="76"/><rect x="322" y="79" width="40" height="76"/></g></svg>`);
 
 // ---------------------------------------------------------------- landing
+// Football photos from GoArena (Unsplash licence: free to use). Shown only until the owner
+// uploads real photos, and always marked "Sample photo" so customers aren't misled.
+const SAMPLE_PHOTOS = ['1513609698234-16d36e4b7a65', '1650327987377-90bf6c9789fd', '1520470082789-e347ad8b1944']
+  .map((id) => `https://images.unsplash.com/photo-${id}?w=1200&h=800&fit=crop&auto=format&q=75`);
+
 function landing() {
-  render(h`<div class="screen"><div class="content" style="justify-content:center">
-    <div class="circle big primary">${icon('calendar', 40)}</div>
-    <div class="display">GroundBook</div>
-    <p class="muted">Simple online booking for football grounds. Customers scan a QR code, pick a slot and pay by UPI. No commission.</p>
-    <p class="small muted">Got a booking link from a ground? Open it directly. Ground owners and helpers can log in below.</p>
-  </div><div class="footer plain"><button class="btn primary" data-go="/login">Owner / helper login</button></div></div>`);
+  render(h`<div class="screen">
+    <div class="hero big" style="background-image:url(/img/stadium.jpg)"><div class="shade"></div>
+      <div class="over"><div class="brand">${icon('calendar', 18)} GroundBook</div>
+        <h1 class="hero-title">Book your game in a minute.</h1>
+        <p class="hero-sub">Scan the ground's QR, pick a slot, pay by UPI. No app, no commission.</p></div></div>
+    <div class="content sheet-up">
+      <div class="feature-list">
+        ${[['qr', 'Scan the QR at the ground', 'Opens the booking page. Nothing to install.'], ['calendar', 'Pick a free slot', 'Full ground or half, any day in the next two weeks.'], ['check', 'Pay and play', 'Pay the ground directly by UPI and get confirmed.']]
+          .map(([ic, t, d]) => h`<div class="feature"><div class="circle soft">${icon(ic, 20)}</div><div><div class="strong">${t}</div><div class="small muted">${d}</div></div></div>`)}
+      </div>
+      <p class="small muted">Got a booking link from a ground? Open it directly. Ground owners and helpers can log in below.</p>
+    </div>
+    <div class="footer plain"><button class="btn primary" data-go="/login">Owner / helper login</button></div></div>`);
 }
 
 // ---------------------------------------------------------------- customer: ground → slots → details
@@ -247,29 +259,47 @@ function customerHome(slug, data) {
   const g = data.ground;
   const mine = store.get('gb_bookings', []).filter((b) => b.slug === slug && b.date >= data.dates[0].date);
   const halves = data.units.length > 1;
+  const sample = !data.photos.length;
+  const photos = sample ? SAMPLE_PHOTOS : data.photos.map((p) => p.url);
+  const from = Math.min(...data.units.map((u) => Math.min(u.weekday, u.weekend)));
   render(h`<div class="screen">
-    <div class="hero"><div class="strip">${data.photos.length ? data.photos.map((p) => h`<img src="${p.url}" alt="${g.name}" loading="lazy">`) : pitchArt}</div>
-      ${data.photos.length > 1 ? h`<div class="count">${icon('image', 14)} ${data.photos.length} photos · swipe</div>` : ''}</div>
-    <div class="content" style="padding-top:20px">
-      <div class="col" style="gap:8px">
-        <h1 class="display">${g.name}</h1>
-        <div class="row small muted">${icon('pin', 18)}<span class="grow">${g.area}</span>${g.mapsUrl ? h`<a class="small strong green" href="${g.mapsUrl}" target="_blank" rel="noopener">Directions</a>` : ''}</div>
+    <div class="hero big">
+      <div class="fallback">${pitchArt}</div>
+      <div class="strip" id="strip">${photos.map((src, i) => h`<img src="${src}" alt="${sample ? 'Sample football ground photo' : `${g.name} photo ${i + 1}`}" ${i ? raw('loading="lazy"') : ''} onerror="this.remove()">`)}</div>
+      <div class="shade"></div>
+      ${sample ? h`<span class="sample">Sample photo</span>` : ''}
+      <div class="over">
+        <h1 class="hero-title">${g.name}</h1>
+        ${g.area ? h`<div class="hero-sub row">${icon('pin', 16)} ${g.area}</div>` : ''}
       </div>
-      ${g.facilities.length ? h`<div class="chips">${g.facilities.map((f) => h`<span class="chip">${f}</span>`)}</div>` : ''}
-      <div class="card">
-        <div class="price-table">
-          <div class="heading">Price per hour</div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>
-          ${data.units.map((u) => h`<div><div class="strong">${u.name}</div>${u.subtitle ? h`<div class="small muted">${u.subtitle}</div>` : ''}</div><div class="strong r">${money(u.weekday)}</div><div class="strong r">${money(u.weekend)}</div>`)}
-        </div>
+      ${photos.length > 1 ? h`<div class="dots" id="dots">${photos.map((_, i) => h`<i class="${i === 0 ? 'on' : ''}"></i>`)}</div>` : ''}
+    </div>
+    <div class="content sheet-up">
+      <div class="row between">
+        <div class="col" style="gap:0"><span class="caption muted">FROM</span><span class="price">${money(from)}<span class="small muted" style="font-weight:600"> / hour</span></span></div>
+        ${g.mapsUrl ? h`<a class="btn small secondary" href="${g.mapsUrl}" target="_blank" rel="noopener">${icon('pin', 16)} Directions</a>` : ''}
       </div>
-      ${halves ? h`<p class="small muted">Book the full ground for 8-a-side, or one half for 5-a-side. Another team can book the other half.</p>` : ''}
-      ${g.about ? h`<p class="small">${g.about}</p>` : ''}
+      ${g.facilities.length ? h`<div class="chips">${g.facilities.map((f) => h`<span class="chip">${icon('check', 14)} ${f}</span>`)}</div>` : ''}
+      <div class="col gap12">
+        <div class="section-title">Prices per hour</div>
+        <div class="tiles">${data.units.map((u) => h`<div class="tile">
+          <div class="strong">${u.name}</div>${u.subtitle ? h`<div class="small muted">${u.subtitle}</div>` : ''}
+          <div class="tile-price">${money(u.weekday)}<span> Mon–Fri</span></div>
+          <div class="small muted">${money(u.weekend)} Sat–Sun</div></div>`)}</div>
+        ${halves ? h`<p class="small muted">Book the full ground for 8-a-side, or one half for 5-a-side. Another team can book the other half.</p>` : ''}
+      </div>
+      ${g.about ? h`<div class="col gap12"><div class="section-title">About</div><p class="small">${g.about}</p></div>` : ''}
       ${mine.length ? h`<div class="col gap12"><div class="section-title">Your bookings</div>${mine.map((b) => h`
         <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${hourLabel(b.hour)}</div>
         <div class="grow"><div class="strong">${fmtDate(b.date)}</div><div class="small muted">${b.unit} · ${b.ref}</div></div>${icon('right', 18)}</a>`)}</div>` : ''}
     </div>
-    <div class="footer"><button class="btn primary" data-go="/g/${slug}?step=slots">Check free slots</button></div>
+    <div class="footer"><button class="btn primary" data-go="/g/${slug}?step=slots">Check free slots ${icon('right', 18)}</button></div>
   </div>`);
+  const strip = document.getElementById('strip'), dots = document.getElementById('dots');
+  if (strip && dots) strip.addEventListener('scroll', () => {
+    const i = Math.round(strip.scrollLeft / strip.clientWidth);
+    dots.querySelectorAll('i').forEach((d, k) => d.classList.toggle('on', k === i));
+  }, { passive: true });
 }
 
 async function customerSlots(slug, data, q) {
