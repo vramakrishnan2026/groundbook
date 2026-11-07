@@ -34,7 +34,7 @@ custom_domain = true
 PUBLIC_URL = "https://book.goarena.in"
 # "Sign in with Google": the OAuth Web client ID from Google Cloud (it is public, not a secret).
 # Leave empty to hide all Google buttons; phone + PIN still works.
-GOOGLE_CLIENT_ID = ""
+GOOGLE_CLIENT_ID = "512357431950-1ireu5n6iqg2pta1edl5h6rqgn8m1agm.apps.googleusercontent.com"
 # Gmail addresses allowed to approve new grounds at book.goarena.in/admin (comma separated).
 ADMIN_EMAILS = ""
 
