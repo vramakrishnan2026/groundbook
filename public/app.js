@@ -1428,8 +1428,9 @@ async function ownerSettings() {
           <ol class="steps small" style="margin-top:10px">
             <li>Sign up at <a class="green strong" href="https://dashboard.razorpay.com/signup" target="_blank" rel="noopener">razorpay.com</a> and choose <b>Unregistered / Individual</b> business. Keep ready: your <b>PAN</b>, the <b>mobile number linked to your bank KYC</b> (or your Aadhaar), and a <b>bank account in your name</b>.</li>
             <li>Razorpay verifies your account, often the same day. You can try everything with <b>Test mode</b> keys while you wait.</li>
-            <li>In the Razorpay Dashboard, open <b>Account &amp; Settings → Website and app details</b> and add this website:
-              <span class="upi-box" style="margin-top:6px;display:flex"><span class="small strong" style="overflow-wrap:anywhere">${s.publicUrl || location.origin}</span><button type="button" class="link" data-act="copyOrigin">Copy</button></span></li>
+            <li>In the Razorpay Dashboard, open <b>Account &amp; Settings → Website and app details</b> and add your booking page (this is where customers pay):
+              <span class="upi-box" style="margin-top:6px;display:flex"><span class="small strong" style="overflow-wrap:anywhere">${(s.publicUrl || location.origin) + '/' + s.ground.slug}</span><button type="button" class="link" data-act="copyOrigin">Copy</button></span>
+              <span class="small muted" style="display:block;margin-top:6px">If Razorpay asks whether customers must log in to pay, answer <b>No</b>.</span></li>
             <li>Open <b>Account &amp; Settings → API Keys</b> and tap <b>Generate Key</b> (use <b>Live mode</b> for real payments).</li>
             <li>Paste the <b>Key ID</b> and <b>Key Secret</b> below and tap <b>Connect</b>. We check them with Razorpay before saving, and the secret is stored encrypted.</li>
           </ol></details>
@@ -1484,7 +1485,7 @@ async function ownerSettings() {
     </div>${ownerNav('set')}</div>`, {
     actions: {
       copyLink: () => copy(link, 'Link copied'),
-      copyOrigin: () => copy(s.publicUrl || location.origin, 'Website address copied'),
+      copyOrigin: () => copy((s.publicUrl || location.origin) + '/' + s.ground.slug, 'Booking page link copied'),
       rzpDisconnect: async () => { if (!confirm('Disconnect Razorpay? Customers will pay by UPI + screenshot again.')) return; await api('DELETE', '/api/owner/razorpay'); toast('Razorpay disconnected'); route(); },
       logout,
       ...googleActions,
