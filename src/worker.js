@@ -64,6 +64,7 @@ const routes = [
     ['POST', '/api/admin/grounds/:id/razorpay/recheck', (env, req, email, p) => adm.rzpRecheck(env, email, p.id, req)],
     ['DELETE', '/api/admin/grounds/:id/razorpay', (env, req, email, p) => adm.rzpDisconnect(env, email, p.id)],
     ['GET', '/api/admin/errors', (env) => adm.errors(env)],
+    ['POST', '/api/admin/grounds/:id/duplicate-demo', (env, req, email, p) => adm.duplicateAsDemo(env, email, p.id, req)],
     ['PUT', '/api/admin/grounds/:id/plan-enabled', (env, req, email, p) => adm.togglePlan(env, email, p.id, req)],
     ['POST', '/api/admin/grounds/:id/payments', (env, req, email, p) => adm.addPayment(env, email, p.id, req)],
     ['POST', '/api/admin/grounds/:id/logout-all', (env, req, email, p) => adm.logoutAll(env, email, p.id)],

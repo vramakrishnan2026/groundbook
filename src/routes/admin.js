@@ -1,7 +1,8 @@
 // GoArena master admin: every ground, its numbers, its subscription, and remote controls.
 // Every change is written to admin_log.
 import { startSession } from '../lib/auth.js';
-import { unitsWithPrices } from '../lib/bookings.js';
+import { insertBooking, unitsWithPrices } from '../lib/bookings.js';
+import { freeSlug } from './accounts.js';
 import { checkKeys, groundKeys, keyMode, listPayments, reconcile } from '../lib/razorpay.js';
 import { logError } from '../lib/tracking.js';
 import { photoUrls } from './public.js';
@@ -40,7 +41,7 @@ function summary(g, t) {
     plan: planState(g, t), planEnabled: !!g.plan_enabled, owner: g.owner, phone: g.phone, email: g.signup_email || g.owner_google || null,
     lastLogin: g.last_login, bookings30: g.bookings30 || 0, revenue30: g.revenue30 || 0, waitingPayments: g.waiting || 0,
     createdAt: g.created_at, photos: g.photos || 0, hasUpi: !!g.upi_id, razorpay: !!g.rzp_enabled,
-    helpers: g.helpers || 0, google: !!g.owner_google, views30: g.views30 || 0, errors7: g.errors7 || 0,
+    demo: !!g.is_demo, helpers: g.helpers || 0, google: !!g.owner_google, views30: g.views30 || 0, errors7: g.errors7 || 0,
     conversion: g.views30 ? pct(g.bookings30 || 0, g.views30) : null,
   };
 }
@@ -60,7 +61,8 @@ export async function overview(env, email) {
        FROM grounds g LEFT JOIN staff o ON o.id = (SELECT id FROM staff WHERE ground_id = g.id AND role = 'owner' ORDER BY id LIMIT 1)
       WHERE g.active = 1 ORDER BY g.approved, g.created_at DESC LIMIT 500`
   ).bind(from, from, from, Date.now() - 7 * 86400000).all();
-  const grounds = results.map((g) => summary(g, t));
+  const all = results.map((g) => summary(g, t));
+  const grounds = all.filter((g) => !g.demo); // totals count real grounds only
   const n = (f) => grounds.filter(f).length;
   const sixMonthsAgo = addMonths(t, -5).slice(0, 7) + '-01';
   const [income, payments, activity, errs] = await Promise.all([
@@ -71,7 +73,7 @@ export async function overview(env, email) {
   ]);
   const months = Array.from({ length: 6 }, (_, i) => addMonths(sixMonthsAgo, i).slice(0, 7));
   return json({
-    email, today: t, grounds,
+    email, today: t, grounds: all,
     income: months.map((m) => { const r = income.results.find((x) => x.month === m); return { month: m, total: r ? r.total : 0, count: r ? r.n : 0 }; }),
     payments: payments.results.map((p) => ({ groundId: p.ground_id, ground: p.ground, amount: p.amount, months: p.months, paidOn: p.paid_on, note: p.note })),
     activity: activity.results.map((l) => ({ groundId: l.ground_id, ground: l.ground, action: l.action, detail: l.detail, email: l.email, at: l.at })),
@@ -141,7 +143,7 @@ export async function detail(env, id) {
     errors: errs.results.map((e) => ({ source: e.source, path: e.path, status: e.status, code: e.code, message: e.message, at: e.at })),
     today: t,
     ground: {
-      id: g.id, slug: g.slug, name: g.name, area: g.area, approved: !!g.approved, email: g.signup_email,
+      id: g.id, slug: g.slug, name: g.name, area: g.area, approved: !!g.approved, email: g.signup_email, demo: !!g.is_demo,
       service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.paid_until, plan: planState(g, t), planEnabled: !!g.plan_enabled,
       adminNote: g.admin_note, autoPauseDays: g.auto_pause_days, createdAt: g.created_at,
       upiId: g.upi_id, razorpay: !!g.rzp_enabled, photos: photoList.length, whatsapp: g.whatsapp,
@@ -347,4 +349,68 @@ export async function errors(env) {
     `SELECT e.*, g.name AS ground FROM error_log e LEFT JOIN grounds g ON g.id = e.ground_id ORDER BY e.id DESC LIMIT 100`
   ).all();
   return json({ errors: results.map((e) => ({ groundId: e.ground_id, ground: e.ground, source: e.source, path: e.path, status: e.status, code: e.code, message: e.message, at: e.at })) });
+}
+
+// ---------- demo ground: a copy of a real ground (photos, prices, hours, facilities) with a
+// separate owner login and a few made-up bookings. No Razorpay keys and no real customers are copied.
+const DEMO_PEOPLE = [['Arjun Nair', '9000011001'], ['Fahad Ali', '9000011002'], ['Sreejith P', '9000011003'], ['Rahul Menon', '9000011004'], ['Vishnu R', '9000011005']];
+
+export async function duplicateAsDemo(env, email, id, request) {
+  const db = env.DB, src = await ground(db, id), body = await readJson(request).catch(() => ({}));
+  const name = cleanText(body.name, 60) || `${src.name} Demo`;
+  const slug = await freeSlug(db, name);
+  const now = Date.now(), t = today();
+  let phone = '';
+  for (let i = 0; i < 20 && !phone; i++) {
+    const p = '9' + String(100000000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000000)).slice(0, 9);
+    if (!(await db.prepare('SELECT 1 FROM staff WHERE phone = ?').bind(p).first())) phone = p;
+  }
+  const pin = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+  const copyFile = async (oldKey, newKey) =>
+    db.prepare('INSERT INTO files (key, content_type, data, size, created_at) SELECT ?, content_type, data, size, ? FROM files WHERE key = ?').bind(newKey, now, oldKey);
+
+  const r = await db.prepare(
+    `INSERT INTO grounds (slug, name, area, maps_url, about, whatsapp, upi_id, upi_name, facilities, open_hour, close_hour, hold_minutes,
+                          booking_days, tz_offset_min, created_at, approved, signup_email, is_demo, admin_note)
+     SELECT ?, ?, area, maps_url, about, ?, upi_id, upi_name, facilities, open_hour, close_hour, hold_minutes,
+            booking_days, tz_offset_min, ?, 1, ?, 1, ? FROM grounds WHERE id = ?`
+  ).bind(slug, name, phone, now, email, `Demo copy of ${src.name} for reviewers. Owner login ${phone}.`, src.id).run();
+  const gid = r.meta.last_row_id;
+
+  const stmts = [
+    db.prepare('INSERT INTO units (ground_id, code, name, subtitle, mask, sort, active) SELECT ?, code, name, subtitle, mask, sort, active FROM units WHERE ground_id = ?').bind(gid, src.id),
+    db.prepare(`INSERT INTO prices (unit_id, day_type, amount) SELECT nu.id, p.day_type, p.amount FROM prices p
+                  JOIN units ou ON ou.id = p.unit_id AND ou.ground_id = ? JOIN units nu ON nu.ground_id = ? AND nu.code = ou.code`).bind(src.id, gid),
+    db.prepare(`INSERT INTO staff (ground_id, role, name, phone, pin_hash, created_at) VALUES (?, 'owner', 'Demo Owner', ?, ?, ?)`).bind(gid, phone, await hashPin(pin), now),
+  ];
+  const { results: photos } = await db.prepare('SELECT r2_key, sort FROM photos WHERE ground_id = ? ORDER BY sort, id').bind(src.id).all();
+  for (const ph of photos) {
+    const key = `photos/${gid}/${crypto.randomUUID()}`;
+    stmts.push(await copyFile(ph.r2_key, key));
+    stmts.push(db.prepare('INSERT INTO photos (ground_id, r2_key, sort, created_at) VALUES (?,?,?,?)').bind(gid, key, ph.sort, now));
+  }
+  if (src.upi_qr_key) {
+    const key = `qr/${gid}/${crypto.randomUUID()}`;
+    stmts.push(await copyFile(src.upi_qr_key, key));
+    stmts.push(db.prepare('UPDATE grounds SET upi_qr_key = ? WHERE id = ?').bind(key, gid));
+  }
+  await db.batch(stmts);
+
+  // A few made-up bookings over the next days so the owner and helper screens aren't empty.
+  const units = await unitsWithPrices(db, gid);
+  if (units.length) {
+    const close = Math.min(src.close_hour, 24), plan = [[1, close - 3, 0], [1, close - 2, 1], [2, close - 4, 2], [2, close - 2, 3], [3, close - 3, 4]];
+    for (const [dayOffset, hour, who] of plan) {
+      const unit = units[who % units.length], date = addDays(t, dayOffset);
+      if (hour < src.open_hour) continue;
+      const amount = (await db.prepare(`SELECT amount FROM prices WHERE unit_id = ? AND day_type = ?`).bind(unit.id, [0, 6].includes(new Date(date + 'T00:00:00Z').getUTCDay()) ? 'weekend' : 'weekday').first())?.amount || 0;
+      await insertBooking(db, {
+        groundId: gid, unitId: unit.id, date, hour, mask: unit.mask, kind: 'customer', status: 'CONFIRMED',
+        name: DEMO_PEOPLE[who][0], phone: DEMO_PEOPLE[who][1], amount, now, decidedAt: now, paidVia: 'upi',
+      }).catch(() => {});
+    }
+  }
+  await log(db, email, gid, 'Demo ground created', `copy of ${src.name}`);
+  await log(db, email, src.id, 'Duplicated as demo', `${name} (/${slug})`);
+  return json({ id: gid, slug, name, phone, pin }, 201);
 }

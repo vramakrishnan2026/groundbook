@@ -32,6 +32,7 @@ export function groundPublic(g) {
     closeHour: g.close_hour,
     holdMinutes: g.hold_minutes,
     open: !!g.approved && g.service === 'active',
+    demo: !!g.is_demo,
     closedNote: g.service === 'active' ? '' : 'Online booking is paused right now.',
   };
 }

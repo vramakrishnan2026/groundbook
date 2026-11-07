@@ -357,3 +357,7 @@ details.err pre { white-space: pre-wrap; word-break: break-word; background: var
 @media (min-width: 900px) { .admin-stats { grid-template-columns: repeat(4, 1fr); } }
 details.err summary { color: inherit; }
 form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
+
+/* Demo grounds */
+.pill.blue { background: #dbeafe; color: #1d4ed8; }
+.banner.blue { background: #eff6ff; color: #1e40af; }

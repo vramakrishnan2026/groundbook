@@ -40,6 +40,7 @@ const ICONS = {
   settings: '<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
   lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   qr: '<rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3M21 21v.01M12 7v3a2 2 0 0 1-2 2H7M3 12h.01M12 3h.01M12 16v.01M16 12h1M21 12v.01M12 21v-1"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
   copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   chat: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
@@ -351,6 +352,7 @@ function customerHome(slug, data) {
       ${photos.length > 1 ? h`<div class="dots" id="dots">${photos.map((_, i) => h`<i class="${i === 0 ? 'on' : ''}"></i>`)}</div>` : ''}
     </div>
     <div class="content sheet-up">
+      ${g.demo ? h`<div class="banner blue small">${icon('info', 18)}<div><span class="strong">Demo ground.</span> Bookings here are for testing and are not real, so please don't pay real money.</div></div>` : ''}
       <div class="row between">
         <div class="col" style="gap:0"><span class="caption muted">FROM</span><span class="price">${money(from)}<span class="small muted" style="font-weight:600"> / hour</span></span></div>
         ${g.mapsUrl ? h`<a class="btn small secondary" href="${g.mapsUrl}" target="_blank" rel="noopener">${icon('pin', 16)} Directions</a>` : ''}
@@ -720,6 +722,7 @@ const SERVICE = {
 };
 const PLAN = { free: ['Free', ''], none: ['Plan on · no payment yet', 'amber'], paid: ['Paid', 'green'], due: ['Due soon', 'amber'], overdue: ['Overdue', 'red'] };
 const statusPills = (g) => h`<div class="chips">
+  ${g.demo ? h`<span class="pill blue">Demo</span>` : ''}
   ${g.approved ? '' : h`<span class="pill amber">Waiting approval</span>`}
   ${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : ''}
   <span class="pill ${PLAN[g.plan][1]}">${g.plan === 'none' || g.plan === 'free' ? PLAN[g.plan][0] : `${PLAN[g.plan][0]} · ${shortDate(g.paidUntil)}`}</span></div>`;
@@ -804,7 +807,7 @@ async function adminPage() {
           <tbody>${list.map((g) => h`<tr data-go="/admin/g/${g.id}" data-search="${search(g)}" tabindex="0">
             <td><div class="strong">${g.name}</div><div class="small muted">${g.area || '—'} · /${g.slug}</div></td>
             <td><div>${g.owner || '—'}</div><div class="small muted">${g.phone || ''}</div><div class="small muted ellipsis">${g.email || ''}</div></td>
-            <td class="nowrap">${g.errors7 ? h`<span class="pill red" title="Errors in the last 7 days">${g.errors7} errors</span> ` : ''}${g.approved ? '' : h`<span class="pill amber">Waiting</span> `}${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : g.approved ? h`<span class="pill green">Live</span>` : ''}</td>
+            <td class="nowrap">${g.demo ? h`<span class="pill blue">Demo</span> ` : ''}${g.errors7 ? h`<span class="pill red" title="Errors in the last 7 days">${g.errors7} errors</span> ` : ''}${g.approved ? '' : h`<span class="pill amber">Waiting</span> `}${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : g.approved ? h`<span class="pill green">Live</span>` : ''}</td>
             <td class="nowrap">${planCell(g)}</td>
             <td class="num">${g.views30}${g.conversion != null ? h`<div class="small muted">${g.conversion}% booked</div>` : ''}</td>
             <td class="num">${g.bookings30}</td><td class="num">${money(g.revenue30)}</td>
@@ -959,7 +962,7 @@ async function adminGround(id) {
     <div class="content tight">
       <div class="row between wrap gap12"><div class="col gap8"><a class="link" href="/${g.slug}" target="_blank" rel="noopener">book.goarena.in/${g.slug}</a>${statusPills(g)}
         <div class="small muted">Signed up ${shortDate(new Date(g.createdAt).toISOString().slice(0, 10))}${g.email ? ` with ${g.email}` : ''}</div></div>
-        <div class="row gap8 only-desktop"><button class="btn small secondary" data-act="asOwner">Open owner view</button><button class="btn small danger" data-act="logoutAll">Log everyone out</button></div></div>
+        <div class="row gap8 only-desktop">${g.demo ? '' : h`<button class="btn small secondary" data-act="demo">Duplicate as demo</button>`}<button class="btn small secondary" data-act="asOwner">Open owner view</button><button class="btn small danger" data-act="logoutAll">Log everyone out</button></div></div>
       ${g.approved ? '' : h`<div class="card"><div class="heading">New ground</div><p class="small muted">Customers can't book until you approve. Check the page, prices and UPI ID first.</p>
         <div class="btn-row" style="max-width:420px"><button class="btn danger" data-act="reject">Turn down</button><button class="btn primary" data-act="approve">Approve</button></div></div>`}
       <div class="admin-grid">
@@ -1018,7 +1021,8 @@ async function adminGround(id) {
 
       <div class="card only-mobile"><div class="heading">Remote help</div>
         <p class="small muted">Open the owner's screens in this browser to fix prices, photos or bookings for them. Log out first to come back here as yourself.</p>
-        <div class="btn-row"><button class="btn secondary" data-act="asOwner">Open owner view</button><button class="btn danger" data-act="logoutAll">Log everyone out</button></div></div>
+        <div class="btn-row"><button class="btn secondary" data-act="asOwner">Open owner view</button><button class="btn danger" data-act="logoutAll">Log everyone out</button></div>
+        ${g.demo ? '' : h`<button class="btn secondary" data-act="demo">Duplicate as demo ground</button>`}</div>
 
       <div class="card"><div class="heading">Latest bookings</div>
         ${d.recent.length ? d.recent.map((b) => h`<div class="row between small"><span>${dayShort(b.date)} ${shortDate(b.date)} ${hourLabel(b.hour)} · ${b.name || 'Walk-in'} · ${b.unit}</span><span class="${b.status === 'CONFIRMED' ? 'strong' : 'muted'}">${b.status === 'CONFIRMED' ? money(b.amount) : b.status.toLowerCase()}</span></div>`)
@@ -1035,6 +1039,24 @@ async function adminGround(id) {
     </div></div>`, {
     actions: {
       approve: async () => { await adminApi('POST', `/api/admin/grounds/${id}/approve`); reload('Approved. Customers can book now.'); },
+      demo: async () => {
+        const name = prompt(`Make a demo copy of ${g.name} (photos, prices, hours, facilities, a few made-up bookings; no Razorpay keys, no real customers).\n\nName of the demo ground:`, `${g.name} Demo`);
+        if (!name) return;
+        const r = await adminApi('POST', `/api/admin/grounds/${id}/duplicate-demo`, { name });
+        if (!r) return;
+        const link = `https://book.goarena.in/${r.slug}`;
+        const forReviewer = `Website: ${link}\nCustomers book and pay without logging in.\nOwner test login: https://book.goarena.in/login\nPhone: ${r.phone}\nPIN: ${r.pin}`;
+        openSheet(h`<div class="title center">${r.name} is ready</div>
+          <div class="card" style="gap:6px"><div class="row between small"><span class="muted">Booking page</span><a class="link" href="/${r.slug}" target="_blank" rel="noopener">/${r.slug}</a></div>
+            <div class="row between small"><span class="muted">Owner login phone</span><span class="strong">${r.phone}</span></div>
+            <div class="row between small"><span class="muted">PIN</span><span class="strong" style="letter-spacing:3px">${r.pin}</span></div></div>
+          <p class="small muted center">The PIN is shown only once. Reset it from the demo ground's page any time, or lock the demo when the review is over.</p>
+          <button class="btn primary" data-act="copyDemo">${icon('copy', 18)} Copy details for Razorpay</button>
+          <button class="btn secondary" data-act="openDemo">Open demo in admin</button>`, {
+          copyDemo: async () => { try { await navigator.clipboard.writeText(forReviewer); toast('Copied'); } catch { prompt('Copy these details:', forReviewer); } },
+          openDemo: () => { closeSheet(); go(`/admin/g/${r.id}`); },
+        });
+      },
       rzpTest: async () => { const r = await adminApi('POST', `/api/admin/grounds/${id}/razorpay/test`); if (r) reload(r.ok ? 'Razorpay keys work' : `Razorpay check failed: ${r.error}`); },
       rzpLoad: async (el) => {
         el.disabled = true; el.textContent = 'Loading from Razorpay…';

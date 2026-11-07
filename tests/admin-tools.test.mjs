@@ -136,3 +136,44 @@ test('admin tools are closed to owners', async () => {
     assert.equal((await owner(m, p, m === 'GET' ? undefined : {})).status, 401, p);
   }
 });
+
+test('duplicate as demo: copies setup, new owner login, fake bookings, no Razorpay keys, left out of totals', async () => {
+  const { env, admin, owner } = await setup();
+  await owner('PUT', '/api/owner/razorpay', { keyId: KEY_ID, keySecret: KEY_SECRET });
+  await env.DB.prepare(`INSERT INTO files (key, content_type, data, size, created_at) VALUES ('photos/1/a', 'image/jpeg', 'AAAA', 3, 0)`).run();
+  await env.DB.prepare(`INSERT INTO photos (ground_id, r2_key, sort, created_at) VALUES (1, 'photos/1/a', 0, 0)`).run();
+  const before = (await admin('GET', '/api/admin/overview')).body.stats;
+
+  const r = await admin('POST', '/api/admin/grounds/1/duplicate-demo', { name: 'Green Field Demo' });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.slug, 'green-field-demo');
+  assert.match(r.body.pin, /^\d{6}$/);
+
+  const pub = (await client(env)('GET', '/api/g/green-field-demo')).body;
+  assert.equal(pub.ground.demo, true);
+  assert.equal(pub.ground.open, true);
+  assert.equal(pub.units.length, 3);
+  assert.equal(pub.photos.length, 1);
+  const img = await handleApi(new Request('http://local.test' + pub.photos[0].url), env);
+  assert.equal(img.status, 200);
+
+  const d = (await admin('GET', `/api/admin/grounds/${r.body.id}`)).body;
+  assert.equal(d.ground.demo, true);
+  assert.equal(d.razorpay.connected, false);
+  assert.equal(d.setup.units[0].weekday, 1200);
+  assert.ok(d.recent.length >= 3);
+  assert.ok(d.recent.every((b) => b.phone === undefined && b.name)); // made-up names only
+
+  // the demo owner login works and only sees the demo ground
+  const demoOwner = client(env);
+  const login = await demoOwner('POST', '/api/auth/login', { phone: r.body.phone, pin: r.body.pin });
+  assert.equal(login.status, 200);
+  assert.equal((await demoOwner('GET', '/api/me')).body.ground.name, 'Green Field Demo');
+
+  // the real ground is untouched and totals ignore the demo
+  const real = (await admin('GET', '/api/admin/grounds/1')).body;
+  assert.equal(real.razorpay.connected, true);
+  const after = (await admin('GET', '/api/admin/overview')).body;
+  assert.equal(after.stats.grounds, before.grounds);
+  assert.equal(after.grounds.find((g) => g.slug === 'green-field-demo').demo, true);
+});

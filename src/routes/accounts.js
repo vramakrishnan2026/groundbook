@@ -27,7 +27,7 @@ function slugify(name) {
   return name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'ground';
 }
 
-async function freeSlug(db, name) {
+export async function freeSlug(db, name) {
   const base = slugify(name);
   for (let i = 1; i < 50; i++) {
     const slug = i === 1 ? base : `${base}-${i}`;
