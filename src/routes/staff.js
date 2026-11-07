@@ -211,6 +211,7 @@ export async function getSettings(env, me) {
     units: units.map(({ id, name, subtitle, weekday, weekend }) => ({ id, name, subtitle, weekday, weekend })),
     photos: await photoUrls(db, g.id),
     helpers,
+    publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
     razorpay: {
       connected: !!(g.rzp_key_id && g.rzp_key_secret_enc),
       enabled: !!g.rzp_enabled,

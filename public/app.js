@@ -190,7 +190,7 @@ function showFormError(form, err) {
 }
 
 const ROUTES = [
-  [/^\/g\/([\w-]+)\/?$/, (m) => customer(m[1])],
+  [/^\/g\/([\w-]+)\/?$/, (m) => go(`/${m[1]}${location.search}`, true)], // old links keep working
   [/^\/b\/([\w-]+)\/?$/, (m) => bookingPage(m[1])],
   [/^\/login\/?$/, () => loginPage()],
   [/^\/owner\/?$/, () => ownerToday()],
@@ -199,6 +199,7 @@ const ROUTES = [
   [/^\/owner\/review\/(\d+)\/?$/, (m) => ownerReview(m[1])],
   [/^\/helper\/?$/, () => helperPage()],
   [/^\/?$/, () => landing()],
+  [/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, (m) => customer(m[1])], // book.goarena.in/llab-toof
 ];
 // Same screen redrawn (after an upload, picking a time, auto-refresh) keeps its scroll
 // position; going to a different screen starts at the top.
@@ -305,7 +306,7 @@ function customerHome(slug, data) {
         <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${hourLabel(b.hour)}</div>
         <div class="grow"><div class="strong">${fmtDate(b.date)}</div><div class="small muted">${b.unit} · ${b.ref}</div></div>${icon('right', 18)}</a>`)}</div>` : ''}
     </div>
-    <div class="footer"><button class="btn primary" data-go="/g/${slug}?step=slots">Check free slots ${icon('right', 18)}</button></div>
+    <div class="footer"><button class="btn primary" data-go="/${slug}?step=slots">Check free slots ${icon('right', 18)}</button></div>
   </div>`);
   const strip = document.getElementById('strip'), dots = document.getElementById('dots');
   if (strip && dots) strip.addEventListener('scroll', () => {
@@ -323,10 +324,10 @@ async function customerSlots(slug, data, q) {
   const visible = slots.hours.filter((x) => x.units[unit.id] !== 'past');
   const selected = visible.find((x) => x.hour === hour && x.units[unit.id] === 'free') ? hour : null;
   // Changing date or court clears the chosen time; picking a time keeps date and court.
-  const url = (p) => `/g/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, ...p })}`;
+  const url = (p) => `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, ...p })}`;
   const price = slots.prices[unit.id];
   render(h`<div class="screen">
-    ${topbar('Pick a slot', `/g/${slug}`)}
+    ${topbar('Pick a slot', `/${slug}`)}
     <div class="content" style="gap:24px">
       <div class="col gap12"><div class="heading">Date</div>
         <div class="dates" id="dates">${data.dates.map((d) => h`<button class="date ${d.date === date ? 'on' : ''}" data-act="date" data-date="${d.date}" aria-pressed="${d.date === date}"><span class="d">${dayShort(d.date)}</span><span class="n">${dayNum(d.date)}</span></button>`)}</div></div>
@@ -346,7 +347,7 @@ async function customerSlots(slug, data, q) {
       date: (el) => go(url({ date: el.dataset.date }), true),
       unit: (el) => go(url({ unit: el.dataset.unit }), true),
       hour: (el) => go(url({ hour: el.dataset.hour }), true),
-      next: () => go(`/g/${slug}?${new URLSearchParams({ step: 'details', date, unit: unit.id, hour: selected })}`),
+      next: () => go(`/${slug}?${new URLSearchParams({ step: 'details', date, unit: unit.id, hour: selected })}`),
     },
   });
   centerDate();
@@ -355,12 +356,12 @@ async function customerSlots(slug, data, q) {
 function customerDetails(slug, data, q) {
   const date = q.get('date'), hour = Number(q.get('hour'));
   const unit = data.units.find((u) => u.id === Number(q.get('unit')));
-  if (!unit || !date || Number.isNaN(hour)) return go(`/g/${slug}?step=slots`, true);
+  if (!unit || !date || Number.isNaN(hour)) return go(`/${slug}?step=slots`, true);
   const dayInfo = data.dates.find((d) => d.date === date);
   const price = dayInfo && dayInfo.dayType === 'weekend' ? unit.weekend : unit.weekday;
   const me = store.get('gb_me', {});
   render(h`<div class="screen">
-    ${topbar('Your details', `/g/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, hour })}`)}
+    ${topbar('Your details', `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, hour })}`)}
     <form class="content" data-form="hold" id="hold-form" novalidate>
       <div class="banner amber">${icon('clock', 22)}<div><div class="strong">We hold the slot for ${data.ground.holdMinutes} minutes</div><div>Pay by UPI and send the screenshot within that time.</div></div></div>
       <div class="field"><label for="name">Your name</label><input class="input" id="name" name="name" autocomplete="name" value="${me.name || ''}" required></div>
@@ -383,7 +384,7 @@ function customerDetails(slug, data, q) {
           store.set('gb_bookings', list.slice(0, 10));
           go(`/b/${r.token}`);
         } catch (err) {
-          if (err.code === 'slot_taken') { toast(err.message); go(`/g/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id })}`, true); return; }
+          if (err.code === 'slot_taken') { toast(err.message); go(`/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id })}`, true); return; }
           throw err;
         }
       },
@@ -406,11 +407,11 @@ async function bookingPage(token) {
       <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${hourLabel(b.hour)}.`)}" target="_blank" rel="noopener">${icon('chat', 18)} WhatsApp</a>
       <a class="btn soft" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call ground</a></div>` : '';
   const result = (circle, title, text, extra = '', footer = '') => render(h`<div class="screen">
-    ${topbar(g.name, `/g/${g.slug}`)}
+    ${topbar(g.name, `/${g.slug}`)}
     <div class="content" style="align-items:center;text-align:center;gap:24px;padding-top:24px">
       ${circle}<div class="col" style="gap:8px;align-items:center"><h1 class="display">${title}</h1><p class="muted">${text}</p></div>
       <div style="width:100%;text-align:left" class="col gap16">${extra}${summary}</div></div>
-    <div class="footer plain">${footer}</div></div>`, { actions: { book: () => go(`/g/${g.slug}`), copyLink: () => copy(location.href, 'Link copied') } });
+    <div class="footer plain">${footer}</div></div>`, { actions: { book: () => go(`/${g.slug}`), copyLink: () => copy(location.href, 'Link copied') } });
 
   if (b.status === 'HOLD') return payPage(token, data);
   if (b.status === 'PENDING') {
@@ -479,7 +480,7 @@ function payPage(token, data) {
       </div>
 `;
   render(h`<div class="screen">
-    ${topbar('Payment', `/g/${g.slug}`)}
+    ${topbar('Payment', `/${g.slug}`)}
     <form class="content tight" data-form="proof" id="proof-form" novalidate>
       <div><span class="pill amber">${icon('clock', 16)} Slot held · <span id="countdown">--:--</span> left</span></div>
       <div class="card" style="align-items:center;gap:4px;padding:20px 16px">
@@ -772,7 +773,7 @@ async function ownerCalendar() {
 async function ownerSettings() {
   const s = await api('GET', '/api/owner/settings');
   const g = s.ground, rz = s.razorpay;
-  const link = `${location.origin}/g/${g.slug}`;
+  const link = `${s.publicUrl || location.origin}/${g.slug}`;
   const qrImg = qrPng(link, 12, 4);
   const hours = Array.from({ length: 25 }, (_, i) => i);
   render(h`<div class="screen">
@@ -782,7 +783,7 @@ async function ownerSettings() {
       <div class="card"><div class="heading">Your booking link</div>
         <img src="${qrImg}" alt="QR code for ${link}" style="width:180px;margin:0 auto" loading="lazy">
         <div class="upi-box"><span class="small strong" style="overflow-wrap:anywhere">${link}</span><button class="link" data-act="copyLink">Copy</button></div>
-        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR to print</a><a class="btn soft" href="/g/${g.slug}" target="_blank">View page</a></div></div>
+        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR to print</a><a class="btn soft" href="/${g.slug}" target="_blank">View page</a></div></div>
 
       <form class="card" data-form="prices"><div class="heading">Price per hour</div>
         <div class="price-table"><div></div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>
@@ -808,7 +809,7 @@ async function ownerSettings() {
             <li>Sign up at <a class="green strong" href="https://dashboard.razorpay.com/signup" target="_blank" rel="noopener">razorpay.com</a> and choose <b>Unregistered / Individual</b> business. Keep ready: your <b>PAN</b>, the <b>mobile number linked to your bank KYC</b> (or your Aadhaar), and a <b>bank account in your name</b>.</li>
             <li>Razorpay verifies your account, often the same day. You can try everything with <b>Test mode</b> keys while you wait.</li>
             <li>In the Razorpay Dashboard, open <b>Account &amp; Settings → Website and app details</b> and add this website:
-              <span class="upi-box" style="margin-top:6px;display:flex"><span class="small strong" style="overflow-wrap:anywhere">${location.origin}</span><button type="button" class="link" data-act="copyOrigin">Copy</button></span></li>
+              <span class="upi-box" style="margin-top:6px;display:flex"><span class="small strong" style="overflow-wrap:anywhere">${s.publicUrl || location.origin}</span><button type="button" class="link" data-act="copyOrigin">Copy</button></span></li>
             <li>Open <b>Account &amp; Settings → API Keys</b> and tap <b>Generate Key</b> (use <b>Live mode</b> for real payments).</li>
             <li>Paste the <b>Key ID</b> and <b>Key Secret</b> below and tap <b>Connect</b>. We check them with Razorpay before saving, and the secret is stored encrypted.</li>
           </ol></details>
@@ -855,7 +856,7 @@ async function ownerSettings() {
     </div>${ownerNav('set')}</div>`, {
     actions: {
       copyLink: () => copy(link, 'Link copied'),
-      copyOrigin: () => copy(location.origin, 'Website address copied'),
+      copyOrigin: () => copy(s.publicUrl || location.origin, 'Website address copied'),
       rzpDisconnect: async () => { if (!confirm('Disconnect Razorpay? Customers will pay by UPI + screenshot again.')) return; await api('DELETE', '/api/owner/razorpay'); toast('Razorpay disconnected'); route(); },
       logout,
       delPhoto: async (el) => { if (!confirm('Delete this photo?')) return; await api('DELETE', `/api/owner/photos/${el.dataset.id}`); route(); },

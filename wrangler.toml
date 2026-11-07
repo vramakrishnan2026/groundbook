@@ -23,5 +23,9 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["*/5 * * * *"]
 
+# The customer-facing address, used for the booking link and QR code in Settings.
+[vars]
+PUBLIC_URL = "https://book.goarena.in"
+
 [observability]
 enabled = true

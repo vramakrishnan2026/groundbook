@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Run the whole app locally:  node scripts/dev-server.mjs   →  http://localhost:8787
 // Uses an in-memory database seeded with a demo ground:
-//   customer:  /g/demo
+//   customer:  /demo
 //   owner:     /owner   phone 9847012345  PIN 1234
 //   helper:    /helper  phone 9946055321  PIN 1111   (added by the seed)
 import http from 'node:http';
@@ -66,5 +66,5 @@ export function createServer(env) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const env = await makeEnv();
-  createServer(env).listen(port, () => console.log(`GroundBook running at http://localhost:${port}  (customer: /g/demo, owner: /owner, helper: /helper)`));
+  createServer(env).listen(port, () => console.log(`GroundBook running at http://localhost:${port}  (customer: /demo, owner: /owner, helper: /helper)`));
 }

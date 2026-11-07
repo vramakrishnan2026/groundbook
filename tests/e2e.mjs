@@ -11,6 +11,7 @@ const env = await makeEnv();
 const fake = fakeRazorpay();
 env.RZP_FETCH = fake.fetchFn;
 env.SECRETS_KEY = 'e2e-secrets-key-0123456789';
+env.PUBLIC_URL = 'https://book.goarena.in';
 const server = createServer(env).listen(0);
 const base = `http://localhost:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -34,7 +35,7 @@ const expectText = async (page, text) => {
 try {
   // ---------------- customer books and pays
   const c = await phone();
-  await c.goto(`${base}/g/demo`);
+  await c.goto(`${base}/demo`);
   await expectText(c, 'Green Field Turf');
   await shot(c, 'customer-ground', true);
   await c.getByRole('button', { name: 'Check free slots' }).click();
@@ -181,9 +182,17 @@ try {
   await expectText(r, 'Paid online');
   await shot(r, 'customer-confirmed-online', true);
 
+  // old /g/ links forward to the short link; Settings shows the public address
+  const old = await phone();
+  await old.goto(`${base}/g/demo?step=slots`);
+  await expectText(old, 'Pick a slot');
+  if (!/\/demo\?step=slots/.test(old.url())) problems.push('old /g/ link did not forward: ' + old.url());
+  await o.goto(`${base}/owner/settings`);
+  await expectText(o, 'https://book.goarena.in/demo');
+
   // price change shows on customer page
   const c3 = await phone();
-  await c3.goto(`${base}/g/demo`);
+  await c3.goto(`${base}/demo`);
   await expectText(c3, '₹1,300');
 } catch (e) {
   problems.push('FAILED: ' + (e.stack || e.message));

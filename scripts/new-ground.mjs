@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Prints the SQL that adds a new ground, its courts, prices and owner login.
 //
+// The ground's link becomes https://book.goarena.in/<slug>
+//
 // Example (your friend's ground, full ground + two halves):
 //   node scripts/new-ground.mjs --slug green-field --name "Green Field Turf" --area "Edappally, Kochi" \
 //     --owner "Rajesh" --phone 9847012345 --pin 4826 \
@@ -30,6 +32,8 @@ const prices = (s) => {
 
 const slug = need('slug').toLowerCase();
 if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) throw new Error('slug: lowercase letters, numbers and dashes only');
+const RESERVED = ['g', 'b', 'api', 'login', 'owner', 'helper', 'img', 'vendor', 'admin', 'www', 'app', 'static'];
+if (RESERVED.includes(slug)) throw new Error(`slug "${slug}" is reserved, pick another`);
 const phone = need('phone').replace(/\D/g, '').slice(-10);
 if (!/^[6-9]\d{9}$/.test(phone)) throw new Error('phone must be a 10-digit Indian mobile number');
 const pin = need('pin');

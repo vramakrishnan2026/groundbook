@@ -4,11 +4,11 @@ Commission-free online booking for football grounds.
 
 A customer scans the ground's QR code, picks a slot, pays the owner directly by UPI and sends the payment screenshot. The owner checks the payment in their bank app and taps **Approve**, and the slot is locked. A helper sees who is coming and can call them. There is no app to install and no login for customers.
 
-Built to run many grounds from one setup. Each ground has its own page at `/g/<slug>`.
+Built to run many grounds from one setup. Each ground has its own page at `/<slug>`.
 
 | Who | Where | What they can do |
 |---|---|---|
-| Customer | `/g/<slug>` (QR code) | See photos, prices and free slots; book with name and phone; pay by UPI; upload proof |
+| Customer | `/<slug>` (QR code) | See photos, prices and free slots; book with name and phone; pay by UPI; upload proof |
 | Owner | `/owner` | Today view, approve or reject payments, calendar (walk-ins, closing slots), prices, photos, UPI details, helpers |
 | Helper | `/helper` | Upcoming bookings with names and phone numbers. No money is shown. |
 
@@ -50,7 +50,7 @@ npm test           # API tests
 ```
 
 Demo logins (the local database resets on every restart):
-- Customer page: `/g/demo`
+- Customer page: `/demo`
 - Owner: `/owner`, phone `9847012345`, PIN `1234`
 - Helper: `/helper`, phone `9946055321`, PIN `1111`
 
@@ -80,7 +80,7 @@ The Cloudflare account is connected to this repo (Workers → *groundbook* → S
    ```bash
    npm run db:migrate
    ```
-4. **Add your friend's ground and owner login.** Choose a short slug; it becomes the link `/g/green-field`:
+4. **Add your friend's ground and owner login.** Choose a short slug; it becomes the link `book.goarena.in/green-field`:
    ```bash
    node scripts/new-ground.mjs --slug green-field --name "Green Field Turf" --area "Edappally, Kochi" \
      --owner "Owner name" --phone 98XXXXXXXX --pin 4826 \
