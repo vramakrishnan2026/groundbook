@@ -48,6 +48,7 @@ const routes = [
     ['POST', '/api/admin/grounds/:id/reject', (env, req, email, p) => adm.decide(env, email, p.id, false)],
     ['PUT', '/api/admin/grounds/:id/service', (env, req, email, p) => adm.setService(env, email, p.id, req)],
     ['PUT', '/api/admin/grounds/:id/plan', (env, req, email, p) => adm.setPlan(env, email, p.id, req)],
+    ['PUT', '/api/admin/grounds/:id/plan-enabled', (env, req, email, p) => adm.togglePlan(env, email, p.id, req)],
     ['POST', '/api/admin/grounds/:id/payments', (env, req, email, p) => adm.addPayment(env, email, p.id, req)],
     ['POST', '/api/admin/grounds/:id/logout-all', (env, req, email, p) => adm.logoutAll(env, email, p.id)],
     ['POST', '/api/admin/grounds/:id/open-as-owner', (env, req, email, p) => adm.openAsOwner(env, email, p.id, req)],

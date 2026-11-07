@@ -27,7 +27,7 @@ export async function me(env, me) {
     me: { name: me.name, role: me.role, phone: me.phone, googleEmail: row.google_email || null },
     ground: {
       ...groundPublic(g), approved: !!g.approved, upiSet: !!g.upi_id,
-      service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.paid_until,
+      service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.plan_enabled ? g.paid_until : null,
       today: localNow(g.tz_offset_min).date,
     },
     googleClientId: env.GOOGLE_CLIENT_ID || null,

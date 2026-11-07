@@ -52,7 +52,8 @@ test('overview lists every ground with numbers', async () => {
   assert.equal(o.stats.grounds, 1);
   const demo = o.grounds[0];
   assert.equal(demo.owner, 'Rajesh');
-  assert.equal(demo.plan, 'none');
+  assert.equal(demo.plan, 'free');
+  assert.equal(o.income.length, 6);
   assert.equal(demo.service, 'active');
   assert.ok(demo.lastLogin > 0);
 });
@@ -88,6 +89,7 @@ test('locked: booking page closed, logins refused, existing booking links still 
 
 test('recording a payment extends paid-until and switches service back on', async () => {
   const { admin, owner, g } = await setup();
+  await admin.call('PUT', '/api/admin/grounds/1/plan-enabled', { enabled: true });
   await admin.call('PUT', '/api/admin/grounds/1/plan', { planAmount: 600, paidUntil: addDays(today, -3), adminNote: 'Pays by GPay' });
   let d = (await admin.call('GET', '/api/admin/grounds/1')).body;
   assert.equal(d.ground.plan, 'overdue');
@@ -103,7 +105,7 @@ test('recording a payment extends paid-until and switches service back on', asyn
   // paying early stacks on the existing date
   const early = await admin.call('POST', '/api/admin/grounds/1/payments', { amount: 600, months: 1 });
   assert.equal(early.body.paidUntil, addMonths(addMonths(today, 2), 1));
-  assert.deepEqual(d.log.map((l) => l.action).slice(0, 3), ['Payment recorded', 'Bookings paused', 'Plan changed']);
+  assert.deepEqual(d.log.map((l) => l.action).slice(0, 4), ['Payment recorded', 'Bookings paused', 'Plan changed', 'Subscription on']);
 });
 
 test('remote resets: PIN, Google link, phone, log everyone out, open as owner', async () => {
@@ -134,4 +136,26 @@ test('owners and helpers can never reach admin routes', async () => {
   for (const [m, p] of [['GET', '/api/admin/overview'], ['GET', '/api/admin/grounds/1'], ['PUT', '/api/admin/grounds/1/service'], ['POST', '/api/admin/staff/1/reset-pin']]) {
     assert.equal((await owner.call(m, p, m === 'GET' ? undefined : {})).status, 401, p);
   }
+});
+
+test('subscription toggle: free grounds are never overdue and owners see no plan', async () => {
+  const { admin, owner } = await setup();
+  await admin.call('PUT', '/api/admin/grounds/1/plan', { planAmount: 500, paidUntil: addDays(today, -10) });
+  let d = (await admin.call('GET', '/api/admin/grounds/1')).body;
+  assert.equal(d.ground.plan, 'free');
+  assert.equal((await owner.call('GET', '/api/me')).body.ground.paidUntil, null);
+  await admin.call('PUT', '/api/admin/grounds/1/plan-enabled', { enabled: true });
+  d = (await admin.call('GET', '/api/admin/grounds/1')).body;
+  assert.equal(d.ground.plan, 'overdue');
+  assert.equal((await owner.call('GET', '/api/me')).body.ground.paidUntil, addDays(today, -10));
+  let o = (await admin.call('GET', '/api/admin/overview')).body;
+  assert.equal(o.stats.overdue, 1);
+  assert.equal(o.stats.monthlyPlans, 500);
+  await admin.call('POST', '/api/admin/grounds/1/payments', { amount: 500, months: 1 });
+  o = (await admin.call('GET', '/api/admin/overview')).body;
+  assert.equal(o.income.at(-1).total, 500);
+  assert.equal(o.payments[0].ground, 'Green Field Turf');
+  assert.equal(o.activity[0].action, 'Payment recorded');
+  await admin.call('PUT', '/api/admin/grounds/1/plan-enabled', { enabled: false });
+  assert.equal((await admin.call('GET', '/api/admin/overview')).body.stats.monthlyPlans, 0);
 });

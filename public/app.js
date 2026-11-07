@@ -704,11 +704,11 @@ const SERVICE = {
   paused: ['Bookings paused', 'amber', 'Customers see "Call to book". Owner and helpers can still log in and see bookings.'],
   locked: ['Locked', 'red', 'Booking page closed and owner/helpers are logged out and can\'t log in. Booking links already sent still open.'],
 };
-const PLAN = { none: ['No plan set', ''], paid: ['Paid', 'green'], due: ['Due soon', 'amber'], overdue: ['Overdue', 'red'] };
+const PLAN = { free: ['Free', ''], none: ['Plan on · no payment yet', 'amber'], paid: ['Paid', 'green'], due: ['Due soon', 'amber'], overdue: ['Overdue', 'red'] };
 const statusPills = (g) => h`<div class="chips">
   ${g.approved ? '' : h`<span class="pill amber">Waiting approval</span>`}
   ${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : ''}
-  <span class="pill ${PLAN[g.plan][1]}">${g.plan === 'none' ? PLAN.none[0] : `${PLAN[g.plan][0]} · ${shortDate(g.paidUntil)}`}</span></div>`;
+  <span class="pill ${PLAN[g.plan][1]}">${g.plan === 'none' || g.plan === 'free' ? PLAN[g.plan][0] : `${PLAN[g.plan][0]} · ${shortDate(g.paidUntil)}`}</span></div>`;
 
 async function adminLogin() {
   render(h`<div class="screen dark"><div class="content" style="justify-content:center"><div class="glass">
@@ -726,33 +726,107 @@ async function adminApi(method, path, body) {
   catch (e) { if (e.status === 401 && e.code === 'admin_auth') { adminLogin(); return null; } throw e; }
 }
 
+const csvCell = (v) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+function downloadCsv(name, rows) {
+  const blob = new Blob(['﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const monthLabel = (m) => asDate(m + '-01').toLocaleDateString('en-IN', { timeZone: 'UTC', month: 'short' });
+const planCell = (g) => g.plan === 'free' ? h`<span class="muted">Free</span>`
+  : h`<div>${money(g.planAmount)}/mo</div><div class="small ${g.plan === 'overdue' ? 'red' : g.plan === 'due' ? 'amber' : 'muted'}">${g.paidUntil ? `${g.plan === 'overdue' ? 'Overdue since' : 'Until'} ${shortDate(g.paidUntil)}` : 'No payment yet'}</div>`;
+
 async function adminPage() {
   const d = await adminApi('GET', '/api/admin/overview');
   if (!d) return;
-  const f = new URLSearchParams(location.search).get('f') || 'all';
+  const q = new URLSearchParams(location.search);
+  const f = q.get('f') || 'all', sort = q.get('s') || 'status', desc = q.get('d') !== 'asc';
   const FILTERS = {
-    all: ['All', () => true], waiting: ['Waiting', (g) => !g.approved], money: ['Overdue / due', (g) => g.plan === 'overdue' || g.plan === 'due'],
-    stopped: ['Paused / locked', (g) => g.service !== 'active'],
+    all: ['All', () => true], waiting: ['Waiting approval', (g) => !g.approved], money: ['Overdue / due', (g) => g.plan === 'overdue' || g.plan === 'due'],
+    stopped: ['Paused / locked', (g) => g.service !== 'active'], free: ['Free', (g) => g.plan === 'free'],
   };
-  const list = d.grounds.filter(FILTERS[f][1]);
+  const rank = (g) => (!g.approved ? 0 : g.service === 'locked' ? 1 : g.plan === 'overdue' ? 2 : g.service === 'paused' ? 3 : g.plan === 'due' ? 4 : 5);
+  const SORTS = {
+    status: [(g) => -rank(g)], name: [(g) => g.name.toLowerCase()], plan: [(g) => g.paidUntil || ''], bookings: [(g) => g.bookings30],
+    revenue: [(g) => g.revenue30], login: [(g) => g.lastLogin || 0], created: [(g) => g.createdAt], check: [(g) => g.waitingPayments],
+  };
+  const key = SORTS[sort] ? SORTS[sort][0] : SORTS.status[0];
+  const list = d.grounds.filter(FILTERS[f] ? FILTERS[f][1] : () => true)
+    .sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * (desc ? -1 : 1); });
+  const qs = (o) => { const n = new URLSearchParams(location.search); Object.entries(o).forEach(([k, v]) => (v == null ? n.delete(k) : n.set(k, v))); const t = n.toString(); return `/admin${t ? '?' + t : ''}`; };
+  const th = (k, label) => h`<th><button class="sort ${sort === k ? 'on' : ''}" data-go="${qs({ s: k, d: sort === k && desc ? 'asc' : null })}">${label}${sort === k ? (desc ? ' ↓' : ' ↑') : ''}</button></th>`;
+  const search = (g) => [g.name, g.slug, g.area, g.owner, g.phone, g.email].filter(Boolean).join(' ').toLowerCase();
   const st = d.stats;
+  const maxIncome = Math.max(1, ...d.income.map((m) => m.total));
   document.title = 'GoArena admin';
-  render(h`<div class="screen"><div class="content tight" style="padding-top:20px">
-    <div class="row between top"><div class="col"><span class="eyebrow">${d.email}</span><h1 class="display">GoArena</h1></div>
-      <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div>
-    <div class="stats">
+  render(h`<div class="screen wide"><div class="content tight" style="padding-top:20px">
+    <div class="row between top wrap gap12"><div class="col"><span class="eyebrow">${d.email}</span><h1 class="display">GoArena</h1></div>
+      <div class="row gap8"><input class="input search" type="search" id="adminSearch" placeholder="Search ground, owner, phone, email" aria-label="Search grounds">
+        <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div></div>
+    <div class="stats admin-stats">
       <div class="card"><span class="small muted">Grounds</span><span class="title">${st.grounds}</span><span class="small muted">${st.waiting} waiting approval</span></div>
-      <div class="card"><span class="small muted">Plans per month</span><span class="title">${money(st.monthlyPlans)}</span><span class="small ${st.overdue ? 'red' : 'muted'}">${st.overdue} overdue · ${st.due} due soon</span></div>
-      <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${st.bookings30}</span><span class="small muted">${money(st.revenue30)} booked</span></div>
+      <div class="card"><span class="small muted">Plan income / month</span><span class="title">${money(st.monthlyPlans)}</span><span class="small muted">${st.onPlan} on a plan · ${st.free} free</span></div>
+      <div class="card"><span class="small muted">Money due</span><span class="title ${st.overdue ? 'red' : ''}">${st.overdue} overdue</span><span class="small muted">${st.due} due within 7 days</span></div>
       <div class="card"><span class="small muted">Stopped</span><span class="title">${st.paused + st.locked}</span><span class="small muted">${st.paused} paused · ${st.locked} locked</span></div>
+      <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${st.bookings30}</span><span class="small muted">across all grounds</span></div>
+      <div class="card"><span class="small muted">Booked value, 30 days</span><span class="title">${money(st.revenue30)}</span><span class="small muted">paid to the grounds</span></div>
     </div>
-    <div class="chips">${Object.entries(FILTERS).map(([k, [label]]) => h`<button class="chip ${k === f ? 'on' : ''}" data-go="/admin${k === 'all' ? '' : `?f=${k}`}">${label}</button>`)}</div>
-    ${list.length ? list.map((g) => h`<a class="card clickable" href="/admin/g/${g.id}" data-go="/admin/g/${g.id}">
-      <div class="row between top"><div class="col" style="gap:2px"><div class="heading">${g.name}</div><div class="small muted">${[g.area, g.owner, g.phone].filter(Boolean).join(' · ')}</div></div>${icon('right', 18)}</div>
-      ${statusPills(g)}
-      <div class="small muted">${g.bookings30} bookings in 30 days · ${money(g.revenue30)}${g.waitingPayments ? ` · ${g.waitingPayments} payments to check` : ''} · last login ${ago(g.lastLogin)}</div></a>`)
-      : h`<div class="empty">Nothing here.</div>`}
-  </div></div>`, { actions: { refresh: () => route() } });
+    <div class="admin-main">
+      <div class="col gap12" style="min-width:0">
+        <div class="row between wrap gap8"><div class="chips">${Object.entries(FILTERS).map(([k, [label]]) => h`<button class="chip ${k === f ? 'on' : ''}" data-go="${qs({ f: k === 'all' ? null : k })}">${label} <span class="muted">${d.grounds.filter(FILTERS[k][1]).length}</span></button>`)}</div>
+          <button class="btn small secondary only-desktop" data-act="csv">${icon('right', 14)} Export CSV</button></div>
+        <div class="card table-card only-desktop"><table class="admin-table">
+          <thead><tr>${th('name', 'Ground')}<th>Owner</th>${th('status', 'Status')}${th('plan', 'Plan')}${th('bookings', 'Bookings 30d')}${th('revenue', 'Booked 30d')}${th('check', 'To check')}${th('login', 'Last login')}<th>Set up</th>${th('created', 'Joined')}</tr></thead>
+          <tbody>${list.map((g) => h`<tr data-go="/admin/g/${g.id}" data-search="${search(g)}" tabindex="0">
+            <td><div class="strong">${g.name}</div><div class="small muted">${g.area || '—'} · /${g.slug}</div></td>
+            <td><div>${g.owner || '—'}</div><div class="small muted">${g.phone || ''}</div><div class="small muted ellipsis">${g.email || ''}</div></td>
+            <td class="nowrap">${g.approved ? '' : h`<span class="pill amber">Waiting</span> `}${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : g.approved ? h`<span class="pill green">Live</span>` : ''}</td>
+            <td class="nowrap">${planCell(g)}</td>
+            <td class="num">${g.bookings30}</td><td class="num">${money(g.revenue30)}</td>
+            <td class="num ${g.waitingPayments ? 'amber strong' : 'muted'}">${g.waitingPayments || '—'}</td>
+            <td class="small nowrap">${ago(g.lastLogin)}</td>
+            <td class="small muted nowrap">${g.photos} photos · ${g.razorpay ? 'Razorpay' : g.hasUpi ? 'UPI' : h`<span class="red">no UPI</span>`} · ${g.helpers} helper${g.helpers === 1 ? '' : 's'}${g.google ? ' · Google' : ''}</td>
+            <td class="small muted nowrap">${shortDate(new Date(g.createdAt).toISOString().slice(0, 10))}</td></tr>`)}</tbody></table>
+          ${list.length ? '' : h`<div class="empty">Nothing here.</div>`}</div>
+        <div class="col gap12 only-mobile">${list.length ? list.map((g) => h`<a class="card clickable" href="/admin/g/${g.id}" data-go="/admin/g/${g.id}" data-search="${search(g)}">
+          <div class="row between top"><div class="col" style="gap:2px"><div class="heading">${g.name}</div><div class="small muted">${[g.area, g.owner, g.phone].filter(Boolean).join(' · ')}</div></div>${icon('right', 18)}</div>
+          ${statusPills(g)}
+          <div class="small muted">${g.bookings30} bookings in 30 days · ${money(g.revenue30)}${g.waitingPayments ? ` · ${g.waitingPayments} payments to check` : ''} · last login ${ago(g.lastLogin)}</div></a>`)
+          : h`<div class="empty">Nothing here.</div>`}</div>
+      </div>
+      <div class="col gap12 admin-side">
+        <div class="card"><div class="heading">Plan payments received</div>
+          <div class="bars">${d.income.map((m) => h`<div class="bar-col" title="${money(m.total)} from ${m.count} payments"><span class="small strong">${m.total ? money(m.total) : ''}</span>
+            <div class="bar" style="height:${Math.round((m.total / maxIncome) * 100)}%"></div><span class="small muted">${monthLabel(m.month)}</span></div>`)}</div></div>
+        <div class="card"><div class="heading">Latest payments</div>
+          ${d.payments.length ? d.payments.map((p) => h`<a class="row between small plain" href="/admin/g/${p.groundId}" data-go="/admin/g/${p.groundId}"><span>${shortDate(p.paidOn)} · ${p.ground}${p.months > 1 ? ` · ${p.months} mo` : ''}</span><span class="strong">${money(p.amount)}</span></a>`)
+            : h`<p class="small muted">No payments recorded yet.</p>`}</div>
+        <div class="card"><div class="heading">Recent activity</div>
+          ${d.activity.length ? d.activity.map((l) => h`<div class="small"><span class="strong">${l.ground || 'GoArena'}</span>: ${l.action}${l.detail ? ` · ${l.detail}` : ''}
+            <div class="muted">${new Date(l.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div></div>`)
+            : h`<p class="small muted">Nothing yet.</p>`}</div>
+      </div>
+    </div>
+  </div></div>`, {
+    actions: {
+      refresh: () => route(),
+      csv: () => downloadCsv(`goarena-grounds-${d.today}.csv`, [
+        ['Ground', 'Link', 'Area', 'Owner', 'Phone', 'Email', 'Approved', 'Service', 'Plan', 'Price per month', 'Paid until', 'Bookings 30d', 'Booked 30d', 'Payments to check', 'Last login', 'Photos', 'UPI', 'Razorpay', 'Helpers', 'Joined'],
+        ...list.map((g) => [g.name, `https://book.goarena.in/${g.slug}`, g.area, g.owner, g.phone, g.email, g.approved ? 'yes' : 'no', g.service, g.plan, g.planEnabled ? g.planAmount : '', g.paidUntil || '',
+          g.bookings30, g.revenue30, g.waitingPayments, g.lastLogin ? new Date(g.lastLogin).toISOString() : '', g.photos, g.hasUpi ? 'yes' : 'no', g.razorpay ? 'yes' : 'no', g.helpers, new Date(g.createdAt).toISOString().slice(0, 10)]),
+      ]),
+    },
+  });
+  const box = document.getElementById('adminSearch');
+  box.value = q.get('q') || '';
+  const apply = () => {
+    const t = box.value.trim().toLowerCase();
+    document.querySelectorAll('[data-search]').forEach((el) => el.classList.toggle('hidden', !!t && !el.dataset.search.includes(t)));
+    history.replaceState(null, '', qs({ q: t || null }));
+  };
+  box.addEventListener('input', apply);
+  if (box.value) apply();
+  document.querySelectorAll('tr[data-go]').forEach((tr) => tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(tr.dataset.go); }));
 }
 
 async function adminGround(id) {
@@ -762,16 +836,18 @@ async function adminGround(id) {
   const svc = SERVICE[g.service];
   const reload = (msg) => { if (msg) toast(msg); route(); };
   document.title = `${g.name} · admin`;
-  render(h`<div class="screen">${topbar(g.name, '/admin')}
+  render(h`<div class="screen wide">${topbar(g.name, '/admin')}
     <div class="content tight">
-      <div class="col gap8"><a class="link" href="/${g.slug}" target="_blank" rel="noopener">book.goarena.in/${g.slug}</a>${statusPills(g)}
+      <div class="row between wrap gap12"><div class="col gap8"><a class="link" href="/${g.slug}" target="_blank" rel="noopener">book.goarena.in/${g.slug}</a>${statusPills(g)}
         <div class="small muted">Signed up ${shortDate(new Date(g.createdAt).toISOString().slice(0, 10))}${g.email ? ` with ${g.email}` : ''}</div></div>
+        <div class="row gap8 only-desktop"><button class="btn small secondary" data-act="asOwner">Open owner view</button><button class="btn small danger" data-act="logoutAll">Log everyone out</button></div></div>
       ${g.approved ? '' : h`<div class="card"><div class="heading">New ground</div><p class="small muted">Customers can't book until you approve. Check the page, prices and UPI ID first.</p>
-        <div class="btn-row"><button class="btn danger" data-act="reject">Turn down</button><button class="btn primary" data-act="approve">Approve</button></div></div>`}
-
+        <div class="btn-row" style="max-width:420px"><button class="btn danger" data-act="reject">Turn down</button><button class="btn primary" data-act="approve">Approve</button></div></div>`}
+      <div class="admin-grid">
+      <div class="col gap16">
       <div class="stats">
         <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${d.stats.bookings30}</span><span class="small muted">${money(d.stats.revenue30)} booked</span></div>
-        <div class="card"><span class="small muted">Set up</span><span class="small">${g.photos} photos</span><span class="small">${g.upiId ? 'UPI ID added' : 'No UPI ID'}${g.razorpay ? ' · Razorpay on' : ''}</span></div>
+        <div class="card"><span class="small muted">Set up</span><span class="small">${g.photos} photos</span><span class="small">${g.upiId ? `UPI: ${g.upiId}` : 'No UPI ID'}${g.razorpay ? ' · Razorpay on' : ''}</span></div>
       </div>
 
       <form class="card" data-form="service"><div class="heading">Service</div>
@@ -780,9 +856,11 @@ async function adminGround(id) {
         <div class="field"><label>Message the owner sees when paused or locked</label><input class="input" name="note" value="${g.serviceNote}" placeholder="e.g. November invoice of ₹500 is unpaid"></div>
         <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save service</button></form>
 
-      <div class="card"><div class="heading">Subscription</div>
+      <div class="card"><div class="row between"><div class="heading">Subscription</div>
+          <label class="switch"><input type="checkbox" data-change="planToggle" ${g.planEnabled ? 'checked' : ''} aria-label="Charge a subscription"><span></span></label></div>
+        ${g.planEnabled ? h`
         <div class="row between"><span class="small muted">Plan</span><span class="strong">${money(g.planAmount)} / month</span></div>
-        <div class="row between"><span class="small muted">Paid until</span><span class="strong ${g.plan === 'overdue' ? 'red' : ''}">${shortDate(g.paidUntil)}</span></div>
+        <div class="row between"><span class="small muted">Paid until</span><span class="strong ${g.plan === 'overdue' ? 'red' : ''}">${g.paidUntil ? shortDate(g.paidUntil) : 'No payment yet'}</span></div>
         <form class="col gap12" data-form="payment" style="border-top:1px solid var(--border);padding-top:12px">
           <div class="strong">Record a payment</div>
           <div class="grid2"><div class="field"><label>Amount ₹</label><input class="input" name="amount" inputmode="numeric" value="${g.planAmount}"></div>
@@ -791,14 +869,21 @@ async function adminGround(id) {
             <div class="field"><label>Note</label><input class="input" name="note" placeholder="UPI ref, cash…"></div></div>
           ${g.service !== 'active' ? h`<label class="row gap8 small"><input type="checkbox" name="reactivate" checked> Switch service back on</label>` : ''}
           <div class="form-error banner red hidden" role="alert"></div><button class="btn primary" type="submit">Record payment</button></form>
-        ${d.payments.length ? h`<div class="col gap8">${d.payments.map((p) => h`<div class="row between small"><span>${shortDate(p.paidOn)} · ${p.months} mo${p.note ? ` · ${p.note}` : ''}</span><span class="strong">${money(p.amount)}</span></div>`)}</div>` : ''}
         <details><summary class="small strong" style="cursor:pointer">Change price or paid-until date</summary>
           <form class="col gap12" data-form="plan" style="margin-top:12px">
             <div class="grid2"><div class="field"><label>Monthly price ₹</label><input class="input" name="planAmount" inputmode="numeric" value="${g.planAmount}"></div>
               <div class="field"><label>Paid until</label><input class="input" type="date" name="paidUntil" value="${g.paidUntil || ''}"></div></div>
-            <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save plan</button></form></details>
+            <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save plan</button></form></details>`
+        : h`<p class="small muted">Off: this ground is free. No plan reminders for the owner, never overdue, not counted as income. Turn on to start charging.</p>`}
+        ${d.payments.length ? h`<div class="col gap8" style="border-top:1px solid var(--border);padding-top:12px"><div class="small strong">Payments</div>${d.payments.map((p) => h`<div class="row between small"><span>${shortDate(p.paidOn)} · ${p.months} mo${p.note ? ` · ${p.note}` : ''}</span><span class="strong">${money(p.amount)}</span></div>`)}</div>` : ''}
       </div>
 
+      <form class="card" data-form="note"><div class="heading">Private notes</div>
+        <textarea class="input" name="adminNote" rows="3" placeholder="Only GoArena admins see this">${g.adminNote}</textarea>
+        <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save notes</button></form>
+      </div>
+
+      <div class="col gap16">
       <div class="card"><div class="heading">People</div>
         ${d.staff.map((p) => h`<div class="col gap8" style="border-top:1px solid var(--border);padding-top:12px">
           <div class="row between"><div><div class="strong">${p.name} <span class="small muted">· ${p.role}</span></div>
@@ -809,13 +894,9 @@ async function adminGround(id) {
             ${p.googleEmail ? h`<button class="chip" data-act="unlink" data-id="${p.id}" data-name="${p.name}">Remove Google</button>` : ''}</div></div>`)}
       </div>
 
-      <div class="card"><div class="heading">Remote help</div>
+      <div class="card only-mobile"><div class="heading">Remote help</div>
         <p class="small muted">Open the owner's screens in this browser to fix prices, photos or bookings for them. Log out first to come back here as yourself.</p>
         <div class="btn-row"><button class="btn secondary" data-act="asOwner">Open owner view</button><button class="btn danger" data-act="logoutAll">Log everyone out</button></div></div>
-
-      <form class="card" data-form="note"><div class="heading">Private notes</div>
-        <textarea class="input" name="adminNote" rows="3" placeholder="Only GoArena admins see this">${g.adminNote}</textarea>
-        <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save notes</button></form>
 
       <div class="card"><div class="heading">Latest bookings</div>
         ${d.recent.length ? d.recent.map((b) => h`<div class="row between small"><span>${dayShort(b.date)} ${shortDate(b.date)} ${hourLabel(b.hour)} · ${b.name || 'Walk-in'} · ${b.unit}</span><span class="${b.status === 'CONFIRMED' ? 'strong' : 'muted'}">${b.status === 'CONFIRMED' ? money(b.amount) : b.status.toLowerCase()}</span></div>`)
@@ -824,6 +905,8 @@ async function adminGround(id) {
       <div class="card"><div class="heading">Activity</div>
         ${d.log.length ? d.log.map((l) => h`<div class="small"><span class="strong">${l.action}</span>${l.detail ? ` · ${l.detail}` : ''}<div class="muted">${new Date(l.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${l.email}</div></div>`)
           : h`<p class="small muted">Nothing yet.</p>`}</div>
+      </div>
+      </div>
     </div></div>`, {
     actions: {
       approve: async () => { await adminApi('POST', `/api/admin/grounds/${id}/approve`); reload('Approved. Customers can book now.'); },
@@ -846,6 +929,13 @@ async function adminGround(id) {
       unlink: async (el) => { if (!confirm(`Remove Google sign-in for ${el.dataset.name}? They can still use phone + PIN.`)) return; await adminApi('POST', `/api/admin/staff/${el.dataset.id}/unlink-google`); reload('Google sign-in removed'); },
       asOwner: async () => { if (!confirm(`Open ${g.name}'s owner screens in this browser?`)) return; if (await adminApi('POST', `/api/admin/grounds/${id}/open-as-owner`)) go('/owner'); },
       logoutAll: async () => { if (!confirm(`Log out the owner and all helpers of ${g.name} on every phone?`)) return; await adminApi('POST', `/api/admin/grounds/${id}/logout-all`); reload('Everyone logged out'); },
+    },
+    changes: {
+      planToggle: async (el) => {
+        const on = el.checked;
+        if (!on && !confirm(`Make ${g.name} free? Plan reminders stop and it won't count as overdue.`)) { el.checked = true; return; }
+        await adminApi('PUT', `/api/admin/grounds/${id}/plan-enabled`, { enabled: on }); reload(on ? 'Subscription on' : 'Subscription off: free ground');
+      },
     },
     forms: {
       service: async (f) => {

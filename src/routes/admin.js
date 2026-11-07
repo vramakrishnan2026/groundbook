@@ -26,15 +26,16 @@ export function addMonths(date, months) {
 }
 
 const planState = (g, t) =>
-  !g.paid_until ? 'none' : g.paid_until < t ? 'overdue' : addDays(t, 7) >= g.paid_until ? 'due' : 'paid';
+  !g.plan_enabled ? 'free' : !g.paid_until ? 'none' : g.paid_until < t ? 'overdue' : addDays(t, 7) >= g.paid_until ? 'due' : 'paid';
 
 function summary(g, t) {
   return {
     id: g.id, slug: g.slug, name: g.name, area: g.area, approved: !!g.approved,
     service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.paid_until,
-    plan: planState(g, t), owner: g.owner, phone: g.phone, email: g.signup_email || g.owner_google || null,
+    plan: planState(g, t), planEnabled: !!g.plan_enabled, owner: g.owner, phone: g.phone, email: g.signup_email || g.owner_google || null,
     lastLogin: g.last_login, bookings30: g.bookings30 || 0, revenue30: g.revenue30 || 0, waitingPayments: g.waiting || 0,
-    createdAt: g.created_at,
+    createdAt: g.created_at, photos: g.photos || 0, hasUpi: !!g.upi_id, razorpay: !!g.rzp_enabled,
+    helpers: g.helpers || 0, google: !!g.owner_google,
   };
 }
 
@@ -45,18 +46,31 @@ export async function overview(env, email) {
             (SELECT MAX(last_login_at) FROM staff s WHERE s.ground_id = g.id) AS last_login,
             (SELECT COUNT(*) FROM bookings b WHERE b.ground_id = g.id AND b.status = 'CONFIRMED' AND b.kind <> 'block' AND b.date >= ?) AS bookings30,
             (SELECT COALESCE(SUM(amount),0) FROM bookings b WHERE b.ground_id = g.id AND b.status = 'CONFIRMED' AND b.kind <> 'block' AND b.date >= ?) AS revenue30,
-            (SELECT COUNT(*) FROM bookings b WHERE b.ground_id = g.id AND b.status = 'PENDING') AS waiting
+            (SELECT COUNT(*) FROM bookings b WHERE b.ground_id = g.id AND b.status = 'PENDING') AS waiting,
+            (SELECT COUNT(*) FROM photos ph WHERE ph.ground_id = g.id) AS photos,
+            (SELECT COUNT(*) FROM staff h WHERE h.ground_id = g.id AND h.role = 'helper' AND h.active = 1) AS helpers
        FROM grounds g LEFT JOIN staff o ON o.id = (SELECT id FROM staff WHERE ground_id = g.id AND role = 'owner' ORDER BY id LIMIT 1)
       WHERE g.active = 1 ORDER BY g.approved, g.created_at DESC LIMIT 500`
   ).bind(from, from).all();
   const grounds = results.map((g) => summary(g, t));
   const n = (f) => grounds.filter(f).length;
+  const sixMonthsAgo = addMonths(t, -5).slice(0, 7) + '-01';
+  const [income, payments, activity] = await Promise.all([
+    db.prepare(`SELECT substr(paid_on, 1, 7) AS month, SUM(amount) AS total, COUNT(*) AS n FROM sub_payments WHERE paid_on >= ? GROUP BY month ORDER BY month`).bind(sixMonthsAgo).all(),
+    db.prepare(`SELECT p.*, g.name AS ground FROM sub_payments p JOIN grounds g ON g.id = p.ground_id ORDER BY p.id DESC LIMIT 12`).all(),
+    db.prepare(`SELECT l.*, g.name AS ground FROM admin_log l LEFT JOIN grounds g ON g.id = l.ground_id ORDER BY l.id DESC LIMIT 15`).all(),
+  ]);
+  const months = Array.from({ length: 6 }, (_, i) => addMonths(sixMonthsAgo, i).slice(0, 7));
   return json({
     email, today: t, grounds,
+    income: months.map((m) => { const r = income.results.find((x) => x.month === m); return { month: m, total: r ? r.total : 0, count: r ? r.n : 0 }; }),
+    payments: payments.results.map((p) => ({ groundId: p.ground_id, ground: p.ground, amount: p.amount, months: p.months, paidOn: p.paid_on, note: p.note })),
+    activity: activity.results.map((l) => ({ groundId: l.ground_id, ground: l.ground, action: l.action, detail: l.detail, email: l.email, at: l.at })),
     stats: {
       grounds: grounds.length, waiting: n((g) => !g.approved), paused: n((g) => g.service === 'paused'), locked: n((g) => g.service === 'locked'),
       overdue: n((g) => g.plan === 'overdue'), due: n((g) => g.plan === 'due'),
-      monthlyPlans: grounds.filter((g) => g.approved && g.service !== 'locked' && g.paidUntil).reduce((a, g) => a + g.planAmount, 0),
+      monthlyPlans: grounds.filter((g) => g.approved && g.planEnabled && g.service !== 'locked').reduce((a, g) => a + g.planAmount, 0),
+      onPlan: n((g) => g.planEnabled), free: n((g) => !g.planEnabled),
       bookings30: grounds.reduce((a, g) => a + g.bookings30, 0), revenue30: grounds.reduce((a, g) => a + g.revenue30, 0),
     },
   });
@@ -77,7 +91,7 @@ export async function detail(env, id) {
     today: t,
     ground: {
       id: g.id, slug: g.slug, name: g.name, area: g.area, approved: !!g.approved, email: g.signup_email,
-      service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.paid_until, plan: planState(g, t),
+      service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.paid_until, plan: planState(g, t), planEnabled: !!g.plan_enabled,
       adminNote: g.admin_note, autoPauseDays: g.auto_pause_days, createdAt: g.created_at,
       upiId: g.upi_id, razorpay: !!g.rzp_enabled, photos: photos.n, whatsapp: g.whatsapp,
     },
@@ -125,6 +139,13 @@ export async function setPlan(env, email, id, request) {
   return json({ ok: true });
 }
 
+export async function togglePlan(env, email, id, request) {
+  const db = env.DB, g = await ground(db, id), on = !!(await readJson(request)).enabled;
+  await db.prepare('UPDATE grounds SET plan_enabled = ? WHERE id = ?').bind(on ? 1 : 0, g.id).run();
+  await log(db, email, g.id, on ? 'Subscription on' : 'Subscription off (free)');
+  return json({ ok: true });
+}
+
 export async function addPayment(env, email, id, request) {
   const db = env.DB, g = await ground(db, id), body = await readJson(request), t = today();
   const amount = Number(body.amount), months = Number(body.months || 1);
@@ -136,7 +157,7 @@ export async function addPayment(env, email, id, request) {
   const stmts = [
     db.prepare('INSERT INTO sub_payments (ground_id, amount, months, paid_on, covers_to, note, by_email, created_at) VALUES (?,?,?,?,?,?,?,?)')
       .bind(g.id, amount, months, paidOn, coversTo, cleanText(body.note, 160), email, Date.now()),
-    db.prepare('UPDATE grounds SET paid_until = ? WHERE id = ?').bind(coversTo, g.id),
+    db.prepare('UPDATE grounds SET paid_until = ?, plan_enabled = 1 WHERE id = ?').bind(coversTo, g.id),
   ];
   const reactivate = body.reactivate !== false && g.service !== 'active';
   if (reactivate) stmts.push(db.prepare(`UPDATE grounds SET service = 'active', service_note = '' WHERE id = ?`).bind(g.id));
