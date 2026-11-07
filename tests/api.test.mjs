@@ -82,7 +82,7 @@ test('two people grabbing the same slot at once: exactly one wins', async () => 
 test('weekend price is used on Saturday and Sunday', async () => {
   const { c, FULL } = await setup();
   const g = (await c.call('GET', '/api/g/demo')).body;
-  const weekend = g.dates.find((d) => d.dayType === 'weekend').date;
+  const weekend = g.dates.find((d) => d.dayType === 'weekend' && d.date > g.dates[0].date).date; // not today: 10 AM may have passed
   const r = await hold(c, FULL, weekend, 10);
   const b = (await c.call('GET', `/api/b/${r.body.token}`)).body.booking;
   assert.equal(b.amount, 1500);

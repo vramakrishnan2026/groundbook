@@ -26,7 +26,7 @@ export async function login(db, request, { phone, pin }) {
   }
   const { results } = await db
     .prepare(
-      `SELECT s.*, g.name AS ground_name, g.slug FROM staff s JOIN grounds g ON g.id = s.ground_id
+      `SELECT s.*, g.name AS ground_name, g.slug, g.service, g.service_note FROM staff s JOIN grounds g ON g.id = s.ground_id
         WHERE s.phone = ? AND s.active = 1 AND g.active = 1 ORDER BY s.role = 'owner' DESC, s.id`
     )
     .bind(p)
@@ -38,6 +38,7 @@ export async function login(db, request, { phone, pin }) {
       break;
     }
   }
+  if (staff && staff.service === 'locked') throw lockedError(staff);
   if (!staff) {
     const fresh = !attempt || now - attempt.window_start >= LOCK_MS;
     await db
@@ -53,10 +54,15 @@ export async function login(db, request, { phone, pin }) {
   return { staff, setCookie: await startSession(db, request, staff.id) };
 }
 
+function lockedError(staff) {
+  return new HttpError(403, `${staff.ground_name} is locked by GoArena.${staff.service_note ? ` ${staff.service_note}` : ''} Please contact GoArena.`, 'locked');
+}
+
 export async function startSession(db, request, staffId) {
   const now = Date.now();
   const token = randomToken(32);
   await db.batch([
+    db.prepare('UPDATE staff SET last_login_at = ? WHERE id = ?').bind(now, staffId),
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
     db.prepare('INSERT INTO sessions (token_hash, staff_id, expires_at) VALUES (?,?,?)').bind(await sha256(token), staffId, now + SESSION_DAYS * 86400000),
   ]);
@@ -69,7 +75,7 @@ export async function loginWithGoogle(env, request, { credential }) {
   const who = await verifyGoogle(env, credential);
   const staff = await env.DB
     .prepare(
-      `SELECT s.*, g.name AS ground_name, g.slug FROM staff s JOIN grounds g ON g.id = s.ground_id
+      `SELECT s.*, g.name AS ground_name, g.slug, g.service, g.service_note FROM staff s JOIN grounds g ON g.id = s.ground_id
         WHERE s.google_sub = ? AND s.active = 1 AND g.active = 1 ORDER BY s.role = 'owner' DESC, s.id LIMIT 1`
     )
     .bind(who.sub)
@@ -77,6 +83,7 @@ export async function loginWithGoogle(env, request, { credential }) {
   if (!staff) {
     throw new HttpError(404, `${who.email || 'This Google account'} isn't linked to a ground yet. Log in with your phone and PIN once, then turn on Google sign-in in Settings. New ground? Tap "List your ground".`, 'not_linked');
   }
+  if (staff.service === 'locked') throw lockedError(staff);
   return { staff, setCookie: await startSession(env.DB, request, staff.id) };
 }
 
@@ -95,7 +102,7 @@ export async function requireStaff(db, request, roles = ['owner', 'helper']) {
     .prepare(
       `SELECT st.id, st.ground_id, st.role, st.name, st.phone FROM sessions se
          JOIN staff st ON st.id = se.staff_id JOIN grounds g ON g.id = st.ground_id
-        WHERE se.token_hash = ? AND se.expires_at > ? AND st.active = 1 AND g.active = 1`
+        WHERE se.token_hash = ? AND se.expires_at > ? AND st.active = 1 AND g.active = 1 AND g.service <> 'locked'`
     )
     .bind(await sha256(token), Date.now())
     .first();

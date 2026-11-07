@@ -243,6 +243,7 @@ const ROUTES = [
   [/^\/helper\/?$/, () => helperPage()],
   [/^\/signup\/?$/, () => signupPage()],
   [/^\/admin\/?$/, () => adminPage()],
+  [/^\/admin\/g\/(\d+)\/?$/, (m) => adminGround(m[1])],
   [/^\/?$/, () => landing()],
   [/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, (m) => customer(m[1])], // book.goarena.in/llab-toof
 ];
@@ -691,39 +692,172 @@ function signupPage() {
   step1();
 }
 
-// ---------------------------------------------------------------- GoArena admin: approve new grounds
+// ---------------------------------------------------------------- GoArena master admin
+const ago = (ms) => {
+  if (!ms) return 'never';
+  const m = Math.round((Date.now() - ms) / 60000);
+  return m < 60 ? `${Math.max(m, 1)} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
+const shortDate = (d) => (d ? asDate(d).toLocaleDateString('en-IN', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const SERVICE = {
+  active: ['Active', 'green', 'Everything works.'],
+  paused: ['Bookings paused', 'amber', 'Customers see "Call to book". Owner and helpers can still log in and see bookings.'],
+  locked: ['Locked', 'red', 'Booking page closed and owner/helpers are logged out and can\'t log in. Booking links already sent still open.'],
+};
+const PLAN = { none: ['No plan set', ''], paid: ['Paid', 'green'], due: ['Due soon', 'amber'], overdue: ['Overdue', 'red'] };
+const statusPills = (g) => h`<div class="chips">
+  ${g.approved ? '' : h`<span class="pill amber">Waiting approval</span>`}
+  ${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : ''}
+  <span class="pill ${PLAN[g.plan][1]}">${g.plan === 'none' ? PLAN.none[0] : `${PLAN[g.plan][0]} · ${shortDate(g.paidUntil)}`}</span></div>`;
+
+async function adminLogin() {
+  render(h`<div class="screen dark"><div class="content" style="justify-content:center"><div class="glass">
+    <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Admin</h1></div></div>
+    <p class="muted" style="margin-top:-8px">Sign in with the Gmail listed as a GoArena admin.</p>
+    <div data-google><div id="gbtn" class="gbtn"><p class="small muted center">Loading Google sign-in…</p></div></div>
+    <div class="form-error banner red hidden" id="gerr" role="alert"></div></div></div></div>`);
+  googleButton('gbtn', async (credential) => {
+    try { await api('POST', '/api/admin/login', { credential }, { noRedirect: true }); route(); }
+    catch (err) { showError('gerr', err.message); }
+  }, { text: 'signin_with', dark: true });
+}
+async function adminApi(method, path, body) {
+  try { return await api(method, path, body, { noRedirect: true }); }
+  catch (e) { if (e.status === 401 && e.code === 'admin_auth') { adminLogin(); return null; } throw e; }
+}
+
 async function adminPage() {
-  let data;
-  try { data = await api('GET', '/api/admin/grounds', undefined, { noRedirect: true }); }
-  catch (e) {
-    if (e.status !== 401) throw e;
-    render(h`<div class="screen dark"><div class="content" style="justify-content:center"><div class="glass">
-      <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Admin</h1></div></div>
-      <p class="muted" style="margin-top:-8px">Sign in with the Gmail listed as a GoArena admin.</p>
-      <div data-google><div id="gbtn" class="gbtn"><p class="small muted center">Loading Google sign-in…</p></div></div>
-      <div class="form-error banner red hidden" id="gerr" role="alert"></div></div></div></div>`);
-    googleButton('gbtn', async (credential) => {
-      try { await api('POST', '/api/admin/login', { credential }, { noRedirect: true }); route(); }
-      catch (err) { showError('gerr', err.message); }
-    }, { text: 'signin_with', dark: true });
-    return;
-  }
-  const waiting = data.grounds.filter((g) => !g.approved), live = data.grounds.filter((g) => g.approved);
-  const row = (g) => h`<div class="card">
-    <div class="row between top"><div class="col" style="gap:2px"><div class="heading">${g.name}</div><div class="small muted">${[g.area, `/${g.slug}`].filter(Boolean).join(' · ')}</div></div>
-      <a class="link" href="/${g.slug}" target="_blank" rel="noopener">Open</a></div>
-    <div class="small">${g.owner || '—'} · <a class="link" href="tel:+91${g.phone}">${g.phone}</a>${g.email ? ` · ${g.email}` : ''}</div>
-    <div class="small muted">Signed up ${new Date(g.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · ${g.photos} photos · ${g.hasUpi ? 'UPI ID added' : 'no UPI ID yet'}</div>
-    ${g.approved ? '' : h`<div class="btn-row"><button class="btn danger" data-act="reject" data-id="${g.id}" data-name="${g.name}">Turn down</button><button class="btn primary" data-act="approve" data-id="${g.id}">Approve</button></div>`}</div>`;
+  const d = await adminApi('GET', '/api/admin/overview');
+  if (!d) return;
+  const f = new URLSearchParams(location.search).get('f') || 'all';
+  const FILTERS = {
+    all: ['All', () => true], waiting: ['Waiting', (g) => !g.approved], money: ['Overdue / due', (g) => g.plan === 'overdue' || g.plan === 'due'],
+    stopped: ['Paused / locked', (g) => g.service !== 'active'],
+  };
+  const list = d.grounds.filter(FILTERS[f][1]);
+  const st = d.stats;
+  document.title = 'GoArena admin';
   render(h`<div class="screen"><div class="content tight" style="padding-top:20px">
-    <div class="col"><span class="eyebrow">${data.email}</span><h1 class="display">New grounds</h1></div>
-    ${waiting.length ? waiting.map(row) : h`<div class="empty">No grounds waiting for approval.</div>`}
-    <div class="section-title">Live (${live.length})</div>
-    ${live.map(row)}
-  </div></div>`, {
+    <div class="row between top"><div class="col"><span class="eyebrow">${d.email}</span><h1 class="display">GoArena</h1></div>
+      <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div>
+    <div class="stats">
+      <div class="card"><span class="small muted">Grounds</span><span class="title">${st.grounds}</span><span class="small muted">${st.waiting} waiting approval</span></div>
+      <div class="card"><span class="small muted">Plans per month</span><span class="title">${money(st.monthlyPlans)}</span><span class="small ${st.overdue ? 'red' : 'muted'}">${st.overdue} overdue · ${st.due} due soon</span></div>
+      <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${st.bookings30}</span><span class="small muted">${money(st.revenue30)} booked</span></div>
+      <div class="card"><span class="small muted">Stopped</span><span class="title">${st.paused + st.locked}</span><span class="small muted">${st.paused} paused · ${st.locked} locked</span></div>
+    </div>
+    <div class="chips">${Object.entries(FILTERS).map(([k, [label]]) => h`<button class="chip ${k === f ? 'on' : ''}" data-go="/admin${k === 'all' ? '' : `?f=${k}`}">${label}</button>`)}</div>
+    ${list.length ? list.map((g) => h`<a class="card clickable" href="/admin/g/${g.id}" data-go="/admin/g/${g.id}">
+      <div class="row between top"><div class="col" style="gap:2px"><div class="heading">${g.name}</div><div class="small muted">${[g.area, g.owner, g.phone].filter(Boolean).join(' · ')}</div></div>${icon('right', 18)}</div>
+      ${statusPills(g)}
+      <div class="small muted">${g.bookings30} bookings in 30 days · ${money(g.revenue30)}${g.waitingPayments ? ` · ${g.waitingPayments} payments to check` : ''} · last login ${ago(g.lastLogin)}</div></a>`)
+      : h`<div class="empty">Nothing here.</div>`}
+  </div></div>`, { actions: { refresh: () => route() } });
+}
+
+async function adminGround(id) {
+  const d = await adminApi('GET', `/api/admin/grounds/${id}`);
+  if (!d) return;
+  const g = d.ground;
+  const svc = SERVICE[g.service];
+  const reload = (msg) => { if (msg) toast(msg); route(); };
+  document.title = `${g.name} · admin`;
+  render(h`<div class="screen">${topbar(g.name, '/admin')}
+    <div class="content tight">
+      <div class="col gap8"><a class="link" href="/${g.slug}" target="_blank" rel="noopener">book.goarena.in/${g.slug}</a>${statusPills(g)}
+        <div class="small muted">Signed up ${shortDate(new Date(g.createdAt).toISOString().slice(0, 10))}${g.email ? ` with ${g.email}` : ''}</div></div>
+      ${g.approved ? '' : h`<div class="card"><div class="heading">New ground</div><p class="small muted">Customers can't book until you approve. Check the page, prices and UPI ID first.</p>
+        <div class="btn-row"><button class="btn danger" data-act="reject">Turn down</button><button class="btn primary" data-act="approve">Approve</button></div></div>`}
+
+      <div class="stats">
+        <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${d.stats.bookings30}</span><span class="small muted">${money(d.stats.revenue30)} booked</span></div>
+        <div class="card"><span class="small muted">Set up</span><span class="small">${g.photos} photos</span><span class="small">${g.upiId ? 'UPI ID added' : 'No UPI ID'}${g.razorpay ? ' · Razorpay on' : ''}</span></div>
+      </div>
+
+      <form class="card" data-form="service"><div class="heading">Service</div>
+        <div class="seg">${Object.entries(SERVICE).map(([k, [label]]) => h`<label><input type="radio" name="service" value="${k}" ${k === g.service ? 'checked' : ''}><span>${label}</span></label>`)}</div>
+        <p class="small muted">${svc[2]}</p>
+        <div class="field"><label>Message the owner sees when paused or locked</label><input class="input" name="note" value="${g.serviceNote}" placeholder="e.g. November invoice of ₹500 is unpaid"></div>
+        <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save service</button></form>
+
+      <div class="card"><div class="heading">Subscription</div>
+        <div class="row between"><span class="small muted">Plan</span><span class="strong">${money(g.planAmount)} / month</span></div>
+        <div class="row between"><span class="small muted">Paid until</span><span class="strong ${g.plan === 'overdue' ? 'red' : ''}">${shortDate(g.paidUntil)}</span></div>
+        <form class="col gap12" data-form="payment" style="border-top:1px solid var(--border);padding-top:12px">
+          <div class="strong">Record a payment</div>
+          <div class="grid2"><div class="field"><label>Amount ₹</label><input class="input" name="amount" inputmode="numeric" value="${g.planAmount}"></div>
+            <div class="field"><label>Months</label><input class="input" name="months" inputmode="numeric" value="1"></div></div>
+          <div class="grid2"><div class="field"><label>Paid on</label><input class="input" type="date" name="paidOn" value="${d.today}"></div>
+            <div class="field"><label>Note</label><input class="input" name="note" placeholder="UPI ref, cash…"></div></div>
+          ${g.service !== 'active' ? h`<label class="row gap8 small"><input type="checkbox" name="reactivate" checked> Switch service back on</label>` : ''}
+          <div class="form-error banner red hidden" role="alert"></div><button class="btn primary" type="submit">Record payment</button></form>
+        ${d.payments.length ? h`<div class="col gap8">${d.payments.map((p) => h`<div class="row between small"><span>${shortDate(p.paidOn)} · ${p.months} mo${p.note ? ` · ${p.note}` : ''}</span><span class="strong">${money(p.amount)}</span></div>`)}</div>` : ''}
+        <details><summary class="small strong" style="cursor:pointer">Change price or paid-until date</summary>
+          <form class="col gap12" data-form="plan" style="margin-top:12px">
+            <div class="grid2"><div class="field"><label>Monthly price ₹</label><input class="input" name="planAmount" inputmode="numeric" value="${g.planAmount}"></div>
+              <div class="field"><label>Paid until</label><input class="input" type="date" name="paidUntil" value="${g.paidUntil || ''}"></div></div>
+            <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save plan</button></form></details>
+      </div>
+
+      <div class="card"><div class="heading">People</div>
+        ${d.staff.map((p) => h`<div class="col gap8" style="border-top:1px solid var(--border);padding-top:12px">
+          <div class="row between"><div><div class="strong">${p.name} <span class="small muted">· ${p.role}</span></div>
+            <div class="small muted">${p.phone}${p.googleEmail ? ` · ${p.googleEmail}` : ''} · last login ${ago(p.lastLogin)}</div></div>
+            <a class="call" href="tel:+91${p.phone}" aria-label="Call ${p.name}">${icon('phone', 20)}</a></div>
+          <div class="chips"><button class="chip" data-act="resetPin" data-id="${p.id}" data-name="${p.name}">Reset PIN</button>
+            <button class="chip" data-act="phone" data-id="${p.id}" data-name="${p.name}" data-phone="${p.phone}">Change phone</button>
+            ${p.googleEmail ? h`<button class="chip" data-act="unlink" data-id="${p.id}" data-name="${p.name}">Remove Google</button>` : ''}</div></div>`)}
+      </div>
+
+      <div class="card"><div class="heading">Remote help</div>
+        <p class="small muted">Open the owner's screens in this browser to fix prices, photos or bookings for them. Log out first to come back here as yourself.</p>
+        <div class="btn-row"><button class="btn secondary" data-act="asOwner">Open owner view</button><button class="btn danger" data-act="logoutAll">Log everyone out</button></div></div>
+
+      <form class="card" data-form="note"><div class="heading">Private notes</div>
+        <textarea class="input" name="adminNote" rows="3" placeholder="Only GoArena admins see this">${g.adminNote}</textarea>
+        <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save notes</button></form>
+
+      <div class="card"><div class="heading">Latest bookings</div>
+        ${d.recent.length ? d.recent.map((b) => h`<div class="row between small"><span>${dayShort(b.date)} ${shortDate(b.date)} ${hourLabel(b.hour)} · ${b.name || 'Walk-in'} · ${b.unit}</span><span class="${b.status === 'CONFIRMED' ? 'strong' : 'muted'}">${b.status === 'CONFIRMED' ? money(b.amount) : b.status.toLowerCase()}</span></div>`)
+          : h`<p class="small muted">No bookings yet.</p>`}</div>
+
+      <div class="card"><div class="heading">Activity</div>
+        ${d.log.length ? d.log.map((l) => h`<div class="small"><span class="strong">${l.action}</span>${l.detail ? ` · ${l.detail}` : ''}<div class="muted">${new Date(l.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${l.email}</div></div>`)
+          : h`<p class="small muted">Nothing yet.</p>`}</div>
+    </div></div>`, {
     actions: {
-      approve: async (el) => { await api('POST', `/api/admin/grounds/${el.dataset.id}/approve`); toast('Approved. Customers can book now.'); route(); },
-      reject: async (el) => { if (!confirm(`Turn down ${el.dataset.name}? Its page and logins stop working.`)) return; await api('POST', `/api/admin/grounds/${el.dataset.id}/reject`); route(); },
+      approve: async () => { await adminApi('POST', `/api/admin/grounds/${id}/approve`); reload('Approved. Customers can book now.'); },
+      reject: async () => { if (!confirm(`Turn down ${g.name}? Its page and logins stop working.`)) return; await adminApi('POST', `/api/admin/grounds/${id}/reject`); go('/admin', true); },
+      resetPin: async (el) => {
+        if (!confirm(`Give ${el.dataset.name} a new PIN? Their old PIN stops working and they are logged out.`)) return;
+        const r = await adminApi('POST', `/api/admin/staff/${el.dataset.id}/reset-pin`);
+        if (!r) return;
+        const msg = `Your new GoArena PIN for ${g.name} is ${r.pin}. Log in at https://book.goarena.in/login with ${r.phone} and change it in Settings.`;
+        openSheet(h`<div class="title center">New PIN for ${r.name}</div><div class="display center" style="letter-spacing:6px">${r.pin}</div>
+          <p class="small muted center">Shown only once. Send it to them now.</p>
+          <a class="btn primary" href="${waLink(r.phone, msg)}" target="_blank" rel="noopener">${icon('chat', 18)} Send on WhatsApp</a>
+          <button class="btn secondary" data-act="pinDone">Done</button>`, { pinDone: () => { closeSheet(); reload(); } });
+      },
+      phone: async (el) => {
+        const phone = prompt(`New phone number for ${el.dataset.name}`, el.dataset.phone);
+        if (!phone) return;
+        await adminApi('PUT', `/api/admin/staff/${el.dataset.id}/phone`, { phone }); reload('Phone changed');
+      },
+      unlink: async (el) => { if (!confirm(`Remove Google sign-in for ${el.dataset.name}? They can still use phone + PIN.`)) return; await adminApi('POST', `/api/admin/staff/${el.dataset.id}/unlink-google`); reload('Google sign-in removed'); },
+      asOwner: async () => { if (!confirm(`Open ${g.name}'s owner screens in this browser?`)) return; if (await adminApi('POST', `/api/admin/grounds/${id}/open-as-owner`)) go('/owner'); },
+      logoutAll: async () => { if (!confirm(`Log out the owner and all helpers of ${g.name} on every phone?`)) return; await adminApi('POST', `/api/admin/grounds/${id}/logout-all`); reload('Everyone logged out'); },
+    },
+    forms: {
+      service: async (f) => {
+        if (f.service === 'locked' && !confirm(`Lock ${g.name}? The booking page closes and the owner and helpers are logged out.`)) return;
+        await adminApi('PUT', `/api/admin/grounds/${id}/service`, f); reload(`Service: ${SERVICE[f.service][0]}`);
+      },
+      payment: async (f) => {
+        const r = await adminApi('POST', `/api/admin/grounds/${id}/payments`, { amount: Number(f.amount), months: Number(f.months), paidOn: f.paidOn, note: f.note, reactivate: f.reactivate === 'on' });
+        if (r) reload(`Paid until ${shortDate(r.paidUntil)}`);
+      },
+      plan: async (f) => { await adminApi('PUT', `/api/admin/grounds/${id}/plan`, { planAmount: Number(f.planAmount), paidUntil: f.paidUntil || null, adminNote: g.adminNote }); reload('Plan saved'); },
+      note: async (f) => { await adminApi('PUT', `/api/admin/grounds/${id}/plan`, { planAmount: g.planAmount, paidUntil: g.paidUntil, adminNote: f.adminNote }); reload('Notes saved'); },
     },
   });
 }
@@ -745,6 +879,17 @@ const bookingRow = (b, { showAmount = false, act } = {}) => h`<div class="brow" 
     <div class="small muted">${[b.unit && b.unit.name, b.phone, showAmount && b.amount ? money(b.amount) + (b.paidVia === 'razorpay' ? ' online' : '') : null, b.kind === 'walkin' ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
   ${b.phone ? h`<a class="call" href="tel:+91${b.phone}" aria-label="Call ${b.name}">${icon('phone', 20)}</a>` : ''}</div>`;
 
+// What the owner sees about their GoArena service and subscription.
+function planBanner(g) {
+  if (g.service === 'paused') return h`<div class="banner red">${icon('x', 20)}<div><div class="strong">Online bookings are paused by GoArena</div>
+    <div>${g.serviceNote || 'Customers can only call you to book.'} Your existing bookings are safe. Contact GoArena to switch bookings back on.</div></div></div>`;
+  if (!g.paidUntil || !g.approved) return '';
+  const days = Math.round((asDate(g.paidUntil) - asDate(g.today)) / 86400000);
+  if (days > 7) return '';
+  return h`<div class="banner amber">${icon('clock', 20)}<div><div class="strong">${days < 0 ? 'GoArena plan overdue' : days === 0 ? 'GoArena plan due today' : `GoArena plan due in ${days} day${days > 1 ? 's' : ''}`}</div>
+    <div>${money(g.planAmount)} per month, paid until ${fmtDate(g.paidUntil)}. Please pay GoArena to keep online bookings running.</div></div></div>`;
+}
+
 async function ownerToday() {
   const [t, me] = await Promise.all([api('GET', '/api/owner/today'), api('GET', '/api/me')]);
   document.title = `${me.ground.name} · Today`;
@@ -755,6 +900,7 @@ async function ownerToday() {
       <div class="stats">
         <div class="card"><span class="small muted">Bookings today</span><span class="title">${t.bookingsToday}</span></div>
         <div class="card"><span class="small muted">This week</span><span class="title">${money(t.weekTotal)}</span></div></div>
+      ${planBanner(me.ground)}
       ${me.ground.approved ? '' : h`<div class="banner amber">${icon('clock', 20)}<div><div class="strong">Waiting for GoArena to switch on bookings</div>
         <div>Customers can see your page but can't book yet. Meanwhile, in <a class="link" href="/owner/settings" data-go="/owner/settings">Settings</a>: ${[me.ground.upiSet ? null : 'add your UPI ID', 'check your prices', 'add photos'].filter(Boolean).join(', ')}.</div></div></div>`}
       ${(t.refunds || []).map((b) => h`<div class="banner red" style="align-items:center">${icon('x', 20)}<div class="grow"><div class="strong">Refund ${money(b.amount)} to ${b.name}</div>
@@ -1009,6 +1155,10 @@ async function ownerSettings() {
         <form class="col gap12" data-form="helper"><div class="grid2"><div class="field"><label>Name</label><input class="input" name="name"></div><div class="field"><label>Phone</label><input class="input" name="phone" type="tel" inputmode="numeric"></div></div>
           <div class="field"><label>PIN for the helper (4–6 digits)</label><input class="input" name="pin" inputmode="numeric" maxlength="6"></div>
           <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Add helper</button></form></div>
+
+      ${me.ground.paidUntil ? h`<div class="card"><div class="heading">GoArena plan</div>
+        <div class="row between"><span class="small muted">Price</span><span class="strong">${money(me.ground.planAmount)} / month</span></div>
+        <div class="row between"><span class="small muted">Paid until</span><span class="strong">${fmtDate(me.ground.paidUntil)}</span></div></div>` : ''}
 
       ${googleCard(me)}
 

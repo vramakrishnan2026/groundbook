@@ -80,31 +80,3 @@ export async function signup(env, request) {
   const staff = await db.prepare('SELECT id FROM staff WHERE ground_id = ? AND role = ?').bind(gid, 'owner').first();
   return json({ slug, role: 'owner' }, 201, { 'set-cookie': await startSession(db, request, staff.id) });
 }
-
-// ---------- admin: approve or turn down new grounds
-export async function adminGrounds(env, email) {
-  const { results } = await env.DB.prepare(
-    `SELECT g.id, g.slug, g.name, g.area, g.approved, g.signup_email, g.created_at, s.name AS owner, s.phone,
-            (SELECT COUNT(*) FROM photos p WHERE p.ground_id = g.id) AS photos, g.upi_id <> '' AS has_upi
-       FROM grounds g LEFT JOIN staff s ON s.ground_id = g.id AND s.role = 'owner'
-      WHERE g.active = 1 GROUP BY g.id ORDER BY g.approved, g.created_at DESC LIMIT 200`
-  ).all();
-  return json({
-    email,
-    grounds: results.map((g) => ({
-      id: g.id, slug: g.slug, name: g.name, area: g.area, approved: !!g.approved, email: g.signup_email,
-      owner: g.owner, phone: g.phone, createdAt: g.created_at, photos: g.photos, hasUpi: !!g.has_upi,
-    })),
-  });
-}
-
-export async function adminDecide(env, id, approve) {
-  const g = await env.DB.prepare('SELECT id FROM grounds WHERE id = ? AND active = 1').bind(Number(id)).first();
-  if (!g) throw new HttpError(404, 'Ground not found', 'not_found');
-  if (approve) await env.DB.prepare('UPDATE grounds SET approved = 1 WHERE id = ?').bind(g.id).run();
-  else await env.DB.batch([
-    env.DB.prepare('UPDATE grounds SET active = 0 WHERE id = ?').bind(g.id),
-    env.DB.prepare('DELETE FROM sessions WHERE staff_id IN (SELECT id FROM staff WHERE ground_id = ?)').bind(g.id),
-  ]);
-  return json({ ok: true });
-}

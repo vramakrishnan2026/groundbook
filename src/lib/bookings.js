@@ -6,6 +6,7 @@ export const ACTIVE = ['HOLD', 'PENDING', 'CONFIRMED'];
 export async function groundBySlug(db, slug) {
   const g = await db.prepare('SELECT * FROM grounds WHERE slug = ? AND active = 1').bind(String(slug)).first();
   if (!g) throw new HttpError(404, 'Ground not found', 'not_found');
+  if (g.service === 'locked') throw new HttpError(410, 'This booking page is closed right now. Please call the ground.', 'closed');
   return g;
 }
 

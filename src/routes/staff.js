@@ -25,7 +25,11 @@ export async function me(env, me) {
   const row = await env.DB.prepare('SELECT google_email FROM staff WHERE id = ?').bind(me.id).first();
   return json({
     me: { name: me.name, role: me.role, phone: me.phone, googleEmail: row.google_email || null },
-    ground: { ...groundPublic(g), approved: !!g.approved, upiSet: !!g.upi_id },
+    ground: {
+      ...groundPublic(g), approved: !!g.approved, upiSet: !!g.upi_id,
+      service: g.service, serviceNote: g.service_note, planAmount: g.plan_amount, paidUntil: g.paid_until,
+      today: localNow(g.tz_offset_min).date,
+    },
     googleClientId: env.GOOGLE_CLIENT_ID || null,
   });
 }

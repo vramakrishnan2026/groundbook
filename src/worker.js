@@ -7,6 +7,7 @@ import { HttpError, json, readJson } from './lib/util.js';
 import * as pub from './routes/public.js';
 import * as st from './routes/staff.js';
 import * as acc from './routes/accounts.js';
+import * as adm from './routes/admin.js';
 
 // [method, pattern, handler(env, request, url, params)]
 const routes = [
@@ -40,9 +41,20 @@ const routes = [
 
   // GoArena admin
   ['POST', '/api/admin/login', async (env, req) => json({ ok: true }, 200, { 'set-cookie': await adminLogin(env, req, await readJson(req)) })],
-  ['GET', '/api/admin/grounds', async (env, req) => acc.adminGrounds(env, await requireAdmin(env, req))],
-  ['POST', '/api/admin/grounds/:id/approve', async (env, req, url, p) => { await requireAdmin(env, req); return acc.adminDecide(env, p.id, true); }],
-  ['POST', '/api/admin/grounds/:id/reject', async (env, req, url, p) => { await requireAdmin(env, req); return acc.adminDecide(env, p.id, false); }],
+  ...[
+    ['GET', '/api/admin/overview', (env, req, email) => adm.overview(env, email)],
+    ['GET', '/api/admin/grounds/:id', (env, req, email, p) => adm.detail(env, p.id)],
+    ['POST', '/api/admin/grounds/:id/approve', (env, req, email, p) => adm.decide(env, email, p.id, true)],
+    ['POST', '/api/admin/grounds/:id/reject', (env, req, email, p) => adm.decide(env, email, p.id, false)],
+    ['PUT', '/api/admin/grounds/:id/service', (env, req, email, p) => adm.setService(env, email, p.id, req)],
+    ['PUT', '/api/admin/grounds/:id/plan', (env, req, email, p) => adm.setPlan(env, email, p.id, req)],
+    ['POST', '/api/admin/grounds/:id/payments', (env, req, email, p) => adm.addPayment(env, email, p.id, req)],
+    ['POST', '/api/admin/grounds/:id/logout-all', (env, req, email, p) => adm.logoutAll(env, email, p.id)],
+    ['POST', '/api/admin/grounds/:id/open-as-owner', (env, req, email, p) => adm.openAsOwner(env, email, p.id, req)],
+    ['POST', '/api/admin/staff/:id/reset-pin', (env, req, email, p) => adm.resetPin(env, email, p.id)],
+    ['POST', '/api/admin/staff/:id/unlink-google', (env, req, email, p) => adm.unlinkGoogle(env, email, p.id)],
+    ['PUT', '/api/admin/staff/:id/phone', (env, req, email, p) => adm.setPhone(env, email, p.id, req)],
+  ].map(([m, path, fn]) => [m, path, async (env, req, url, p) => fn(env, req, await requireAdmin(env, req), p)]),
   ['POST', '/api/auth/logout', async (env, req) => json({ ok: true }, 200, { 'set-cookie': await logout(env.DB, req) })],
   ['GET', '/api/me', staff(['owner', 'helper'], (env, me) => st.me(env, me))],
 

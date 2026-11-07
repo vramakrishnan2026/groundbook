@@ -114,10 +114,10 @@ test('new owner signs up with Google; ground waits for admin approval', async ()
 
   // admin approves
   const admin = client(env);
-  assert.equal((await admin.call('GET', '/api/admin/grounds')).status, 401);
+  assert.equal((await admin.call('GET', '/api/admin/overview')).status, 401);
   assert.equal((await admin.call('POST', '/api/admin/login', { credential: await google.token({ email: 'random@gmail.com' }) })).status, 403);
   assert.equal((await admin.call('POST', '/api/admin/login', { credential: await google.token({ sub: 'boss', email: 'boss@gmail.com' }) })).status, 200);
-  const list = (await admin.call('GET', '/api/admin/grounds')).body.grounds;
+  const list = (await admin.call('GET', '/api/admin/overview')).body.grounds;
   const kick = list.find((x) => x.slug === 'kick-off-arena');
   assert.equal(kick.approved, false);
   assert.equal(kick.email, 'sunil@gmail.com');
@@ -135,5 +135,5 @@ test('new owner signs up with Google; ground waits for admin approval', async ()
 test('an owner session cannot use admin routes', async () => {
   const { c } = await setup();
   await c.call('POST', '/api/auth/login', { phone: '9847012345', pin: '1234' });
-  assert.equal((await c.call('GET', '/api/admin/grounds')).status, 401);
+  assert.equal((await c.call('GET', '/api/admin/overview')).status, 401);
 });

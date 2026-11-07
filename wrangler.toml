@@ -36,7 +36,7 @@ PUBLIC_URL = "https://book.goarena.in"
 # Leave empty to hide all Google buttons; phone + PIN still works.
 GOOGLE_CLIENT_ID = "512357431950-1ireu5n6iqg2pta1edl5h6rqgn8m1agm.apps.googleusercontent.com"
 # Gmail addresses allowed to approve new grounds at book.goarena.in/admin (comma separated).
-ADMIN_EMAILS = ""
+ADMIN_EMAILS = "goarena2026@gmail.com"
 
 [observability]
 enabled = true

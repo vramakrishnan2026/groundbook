@@ -270,3 +270,13 @@ body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-even
 .seg label input:checked + span { background: var(--bg); border-color: var(--primary); color: var(--primary); }
 .seg label input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
 .screen.dark .feature .strong { color: #fff; }
+
+/* Master admin */
+.pill.red { background: var(--red-soft); color: var(--red); }
+button.chip { border: 1.5px solid transparent; cursor: pointer; color: var(--text); font-family: inherit; }
+.chip.on { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+a.card.clickable { color: inherit; text-decoration: none; cursor: pointer; }
+a.card.clickable:active { transform: scale(.99); }
+details summary { list-style: none; color: var(--primary); }
+details summary::-webkit-details-marker { display: none; }
+textarea.input { min-height: 84px; padding-top: 12px; resize: vertical; font-family: inherit; }
