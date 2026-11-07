@@ -167,3 +167,9 @@ export async function reconcileRecent(env) {
     await reconcile(env, row, row).catch((e) => console.error('reconcile', row.ref, e && e.message));
   }
 }
+
+// For the GoArena admin page: the owner's latest Razorpay payments, straight from Razorpay.
+export async function listPayments(env, keys, count = 25) {
+  const data = await call(env, keys.keyId, keys.keySecret, 'GET', `/payments?count=${Math.min(Math.max(count, 1), 100)}`);
+  return data.items || [];
+}

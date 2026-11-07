@@ -5,6 +5,7 @@ import {
 } from '../lib/bookings.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { createOrder, groundKeys, markPaidOnline, paidPayment, reconcile, signatureOk } from '../lib/razorpay.js';
+import { countVisit } from '../lib/tracking.js';
 import { HttpError, bad, cleanName, cleanPhone, cleanUtr, dayType, int, isDate, json, readJson } from '../lib/util.js';
 
 const MAX_HOLDS_PER_PHONE = 2;
@@ -37,6 +38,7 @@ export function groundPublic(g) {
 
 export async function getGround(env, slug) {
   const g = await groundBySlug(env.DB, slug);
+  await countVisit(env.DB, g.id, 'views');
   const units = await unitsWithPrices(env.DB, g.id);
   const dates = bookableDates(g).map((d) => ({ date: d, dayType: dayType(d) }));
   return json({
@@ -51,6 +53,7 @@ export async function getSlots(env, slug, url) {
   const g = await groundBySlug(env.DB, slug);
   const date = url.searchParams.get('date');
   if (!isDate(date) || !bookableDates(g).includes(date)) throw bad('That date is not open for booking');
+  await countVisit(env.DB, g.id, 'slot_views');
   await sweepExpired(env.DB);
   const units = await unitsWithPrices(env.DB, g.id);
   return json({

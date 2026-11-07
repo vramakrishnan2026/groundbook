@@ -242,8 +242,8 @@ export async function saveRazorpay(env, me, request) {
     if (!/^[A-Za-z0-9]{10,}$/.test(keySecret)) throw bad('Paste the Key Secret exactly as Razorpay shows it', 'keySecret');
     await checkKeys(env, keyId, keySecret);
     await db
-      .prepare('UPDATE grounds SET rzp_key_id = ?, rzp_key_secret_enc = ?, rzp_enabled = ? WHERE id = ?')
-      .bind(keyId, await encryptSecret(env, keySecret), body.enabled === false ? 0 : 1, g.id)
+      .prepare('UPDATE grounds SET rzp_key_id = ?, rzp_key_secret_enc = ?, rzp_enabled = ?, rzp_connected_at = ?, rzp_checked_at = ?, rzp_check_error = NULL WHERE id = ?')
+      .bind(keyId, await encryptSecret(env, keySecret), body.enabled === false ? 0 : 1, Date.now(), Date.now(), g.id)
       .run();
   } else if (typeof body.enabled === 'boolean') {
     if (body.enabled && !(g.rzp_key_id && g.rzp_key_secret_enc)) throw bad('Connect your Razorpay keys first');

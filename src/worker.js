@@ -3,6 +3,7 @@
 import { adminLogin, login, loginWithGoogle, logout, requireAdmin, requireStaff } from './lib/auth.js';
 import { sweepExpired } from './lib/bookings.js';
 import { reconcileRecent } from './lib/razorpay.js';
+import { groundIdForPath, logError, pruneLogs } from './lib/tracking.js';
 import { HttpError, json, readJson } from './lib/util.js';
 import * as pub from './routes/public.js';
 import * as st from './routes/staff.js';
@@ -31,6 +32,15 @@ const routes = [
     return json({ role: staff.role, ground: staff.ground_name }, 200, { 'set-cookie': setCookie });
   }],
   ['GET', '/api/config', async (env) => acc.config(env)],
+  // Browser errors from any page (customer or owner), for remote debugging.
+  ['POST', '/api/client-error', async (env, req) => {
+    const b = await readJson(req).catch(() => ({}));
+    const first = String(b.page || '').split(/[?#]/)[0].split('/')[1] || '';
+    const slug = ['b', 'owner', 'helper', 'login', 'admin', 'signup'].includes(first) ? '' : first;
+    const g = slug ? await env.DB.prepare('SELECT id FROM grounds WHERE slug = ?').bind(slug).first() : null;
+    await logError(env.DB, { groundId: g ? g.id : null, source: 'browser', path: String(b.page || '').slice(0, 200), message: `${b.message || ''}${b.ua ? ` · ${b.ua}` : ''}` });
+    return json({ ok: true });
+  }],
   ['POST', '/api/auth/google', async (env, req) => {
     const { staff, setCookie } = await loginWithGoogle(env, req, await readJson(req));
     return json({ role: staff.role, ground: staff.ground_name }, 200, { 'set-cookie': setCookie });
@@ -48,6 +58,12 @@ const routes = [
     ['POST', '/api/admin/grounds/:id/reject', (env, req, email, p) => adm.decide(env, email, p.id, false)],
     ['PUT', '/api/admin/grounds/:id/service', (env, req, email, p) => adm.setService(env, email, p.id, req)],
     ['PUT', '/api/admin/grounds/:id/plan', (env, req, email, p) => adm.setPlan(env, email, p.id, req)],
+    ['PUT', '/api/admin/grounds/:id/profile', (env, req, email, p) => adm.setProfile(env, email, p.id, req)],
+    ['POST', '/api/admin/grounds/:id/razorpay/test', (env, req, email, p) => adm.rzpTest(env, email, p.id)],
+    ['GET', '/api/admin/grounds/:id/razorpay/payments', (env, req, email, p) => adm.rzpPayments(env, p.id)],
+    ['POST', '/api/admin/grounds/:id/razorpay/recheck', (env, req, email, p) => adm.rzpRecheck(env, email, p.id, req)],
+    ['DELETE', '/api/admin/grounds/:id/razorpay', (env, req, email, p) => adm.rzpDisconnect(env, email, p.id)],
+    ['GET', '/api/admin/errors', (env) => adm.errors(env)],
     ['PUT', '/api/admin/grounds/:id/plan-enabled', (env, req, email, p) => adm.togglePlan(env, email, p.id, req)],
     ['POST', '/api/admin/grounds/:id/payments', (env, req, email, p) => adm.addPayment(env, email, p.id, req)],
     ['POST', '/api/admin/grounds/:id/logout-all', (env, req, email, p) => adm.logoutAll(env, email, p.id)],
@@ -124,8 +140,15 @@ export async function handleApi(request, env) {
     if (m === 'method') throw new HttpError(405, 'Method not allowed', 'method');
     return await m.handler(env, request, url, m.params);
   } catch (e) {
-    if (e instanceof HttpError) return json({ error: e.message, code: e.code }, e.status);
+    if (e instanceof HttpError) {
+      // Keep server-side failures and Razorpay problems for the admin page.
+      if (e.status >= 500 || String(e.code).startsWith('rzp_')) {
+        await logError(env.DB, { groundId: await groundIdForPath(env.DB, url.pathname), source: String(e.code).startsWith('rzp_') ? 'razorpay' : 'server', path: `${request.method} ${url.pathname}`, status: e.status, code: e.code, message: e.message });
+      }
+      return json({ error: e.message, code: e.code }, e.status);
+    }
     console.error('Unhandled error', e && e.stack ? e.stack : e);
+    await logError(env.DB, { groundId: await groundIdForPath(env.DB, url.pathname), path: `${request.method} ${url.pathname}`, status: 500, code: 'server', message: (e && e.stack) || String(e) });
     return json({ error: 'Something went wrong. Please try again.', code: 'server' }, 500);
   }
 }
@@ -140,6 +163,6 @@ export default {
   // Cron trigger (see wrangler.toml): first pick up online payments we missed, then
   // release slots whose hold ran out.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(reconcileRecent(env).catch((e) => console.error(e)).then(() => sweepExpired(env.DB)));
+    ctx.waitUntil(reconcileRecent(env).catch((e) => console.error(e)).then(() => sweepExpired(env.DB)).then(() => pruneLogs(env.DB)));
   },
 };

@@ -134,6 +134,18 @@ function loadScript(src) {
   });
 }
 
+// ---------------------------------------------------------------- error reporting
+// Browser errors go to the GoArena admin page (at most 5 per page load) so problems on
+// customers' phones can be debugged remotely.
+let reported = 0;
+function reportError(message) {
+  if (reported++ >= 5 || !message) return;
+  const body = JSON.stringify({ page: location.pathname + location.search, message: String(message).slice(0, 400), ua: navigator.userAgent.slice(0, 160) });
+  try { navigator.sendBeacon ? navigator.sendBeacon('/api/client-error', new Blob([body], { type: 'application/json' })) : fetch('/api/client-error', { method: 'POST', headers: { 'content-type': 'application/json' }, body }); } catch { /* ignore */ }
+}
+window.addEventListener('error', (e) => reportError(`${e.message} at ${(e.filename || '').split('/').pop()}:${e.lineno}`));
+window.addEventListener('unhandledrejection', (e) => { if (!(e.reason instanceof ApiError)) reportError(e.reason && (e.reason.stack || e.reason.message || e.reason)); });
+
 // ---------------------------------------------------------------- Sign in with Google
 // The button is drawn by Google's own script. Everything stays hidden until the
 // server has a Google client ID configured.
@@ -244,6 +256,7 @@ const ROUTES = [
   [/^\/signup\/?$/, () => signupPage()],
   [/^\/admin\/?$/, () => adminPage()],
   [/^\/admin\/g\/(\d+)\/?$/, (m) => adminGround(m[1])],
+  [/^\/admin\/errors\/?$/, () => adminErrors()],
   [/^\/?$/, () => landing()],
   [/^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/, (m) => customer(m[1])], // book.goarena.in/llab-toof
 ];
@@ -268,6 +281,7 @@ async function route() {
   renderError(new ApiError('Page not found', 404));
 }
 function renderError(err) {
+  if (!(err instanceof ApiError)) reportError(err && (err.stack || err.message || err)); // a bug, not a normal "not found" etc.
   render(h`<div class="screen"><div class="content" style="justify-content:center;align-items:center;text-align:center">
     <div class="circle big red">${icon('x', 40)}</div>
     <div class="title">${err.status === 404 ? 'Not found' : 'Something went wrong'}</div>
@@ -726,6 +740,13 @@ async function adminApi(method, path, body) {
   catch (e) { if (e.status === 401 && e.code === 'admin_auth') { adminLogin(); return null; } throw e; }
 }
 
+const when = (ms) => new Date(ms).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const SOURCE = { server: ['Server', 'red'], browser: ['Browser', 'amber'], razorpay: ['Razorpay', 'red'] };
+const errorRow = (e, showGround) => h`<details class="err"><summary><span class="pill ${SOURCE[e.source] ? SOURCE[e.source][1] : ''}">${SOURCE[e.source] ? SOURCE[e.source][0] : e.source}</span>
+    <span class="small grow ellipsis1">${showGround && e.ground ? h`<span class="strong">${e.ground}</span> · ` : ''}${e.message.split('\n')[0]}</span><span class="small muted nowrap">${when(e.at)}</span></summary>
+  <div class="small muted">${e.path}${e.status ? ` · ${e.status}` : ''}${e.code ? ` · ${e.code}` : ''}</div><pre class="small">${e.message}</pre></details>`;
+const CF_DASH = 'https://dash.cloudflare.com/';
+
 const csvCell = (v) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 function downloadCsv(name, rows) {
   const blob = new Blob(['﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv' });
@@ -748,7 +769,7 @@ async function adminPage() {
   const rank = (g) => (!g.approved ? 0 : g.service === 'locked' ? 1 : g.plan === 'overdue' ? 2 : g.service === 'paused' ? 3 : g.plan === 'due' ? 4 : 5);
   const SORTS = {
     status: [(g) => -rank(g)], name: [(g) => g.name.toLowerCase()], plan: [(g) => g.paidUntil || ''], bookings: [(g) => g.bookings30],
-    revenue: [(g) => g.revenue30], login: [(g) => g.lastLogin || 0], created: [(g) => g.createdAt], check: [(g) => g.waitingPayments],
+    revenue: [(g) => g.revenue30], visits: [(g) => g.views30], login: [(g) => g.lastLogin || 0], created: [(g) => g.createdAt], check: [(g) => g.waitingPayments],
   };
   const key = SORTS[sort] ? SORTS[sort][0] : SORTS.status[0];
   const list = d.grounds.filter(FILTERS[f] ? FILTERS[f][1] : () => true)
@@ -763,6 +784,7 @@ async function adminPage() {
     <div class="row between top wrap gap12"><div class="col"><span class="eyebrow">${d.email}</span><h1 class="display">GoArena</h1></div>
       <div class="row gap8"><input class="input search" type="search" id="adminSearch" placeholder="Search ground, owner, phone, email" aria-label="Search grounds">
         <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div></div>
+    <p class="small muted">Visits and errors are counted by GoArena per ground. Site-wide traffic, countries and server logs: <a class="link" href="${CF_DASH}" target="_blank" rel="noopener">Cloudflare dashboard ↗</a> (Workers &amp; Pages → groundbook → Metrics / Logs).</p>
     <div class="stats admin-stats">
       <div class="card"><span class="small muted">Grounds</span><span class="title">${st.grounds}</span><span class="small muted">${st.waiting} waiting approval</span></div>
       <div class="card"><span class="small muted">Plan income / month</span><span class="title">${money(st.monthlyPlans)}</span><span class="small muted">${st.onPlan} on a plan · ${st.free} free</span></div>
@@ -770,18 +792,21 @@ async function adminPage() {
       <div class="card"><span class="small muted">Stopped</span><span class="title">${st.paused + st.locked}</span><span class="small muted">${st.paused} paused · ${st.locked} locked</span></div>
       <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${st.bookings30}</span><span class="small muted">across all grounds</span></div>
       <div class="card"><span class="small muted">Booked value, 30 days</span><span class="title">${money(st.revenue30)}</span><span class="small muted">paid to the grounds</span></div>
+      <div class="card"><span class="small muted">Page visits, 30 days</span><span class="title">${st.views30.toLocaleString('en-IN')}</span><span class="small muted">${st.views30 ? `${((st.bookings30 / st.views30) * 100).toFixed(st.bookings30 / st.views30 < 0.01 ? 1 : 0)}% became bookings` : 'booking pages opened'}</span></div>
+      <a class="card clickable" href="/admin/errors" data-go="/admin/errors"><span class="small muted">Errors, 24 hours</span><span class="title ${st.errors24 ? 'red' : ''}">${st.errors24}</span><span class="small muted">${st.rzpErrors24} from Razorpay · see all</span></a>
     </div>
     <div class="admin-main">
       <div class="col gap12" style="min-width:0">
         <div class="row between wrap gap8"><div class="chips">${Object.entries(FILTERS).map(([k, [label]]) => h`<button class="chip ${k === f ? 'on' : ''}" data-go="${qs({ f: k === 'all' ? null : k })}">${label} <span class="muted">${d.grounds.filter(FILTERS[k][1]).length}</span></button>`)}</div>
           <button class="btn small secondary only-desktop" data-act="csv">${icon('right', 14)} Export CSV</button></div>
         <div class="card table-card only-desktop"><table class="admin-table">
-          <thead><tr>${th('name', 'Ground')}<th>Owner</th>${th('status', 'Status')}${th('plan', 'Plan')}${th('bookings', 'Bookings 30d')}${th('revenue', 'Booked 30d')}${th('check', 'To check')}${th('login', 'Last login')}<th>Set up</th>${th('created', 'Joined')}</tr></thead>
+          <thead><tr>${th('name', 'Ground')}<th>Owner</th>${th('status', 'Status')}${th('plan', 'Plan')}${th('visits', 'Visits 30d')}${th('bookings', 'Bookings 30d')}${th('revenue', 'Booked 30d')}${th('check', 'To check')}${th('login', 'Last login')}<th>Set up</th>${th('created', 'Joined')}</tr></thead>
           <tbody>${list.map((g) => h`<tr data-go="/admin/g/${g.id}" data-search="${search(g)}" tabindex="0">
             <td><div class="strong">${g.name}</div><div class="small muted">${g.area || '—'} · /${g.slug}</div></td>
             <td><div>${g.owner || '—'}</div><div class="small muted">${g.phone || ''}</div><div class="small muted ellipsis">${g.email || ''}</div></td>
-            <td class="nowrap">${g.approved ? '' : h`<span class="pill amber">Waiting</span> `}${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : g.approved ? h`<span class="pill green">Live</span>` : ''}</td>
+            <td class="nowrap">${g.errors7 ? h`<span class="pill red" title="Errors in the last 7 days">${g.errors7} errors</span> ` : ''}${g.approved ? '' : h`<span class="pill amber">Waiting</span> `}${g.service !== 'active' ? h`<span class="pill ${SERVICE[g.service][1]}">${SERVICE[g.service][0]}</span>` : g.approved ? h`<span class="pill green">Live</span>` : ''}</td>
             <td class="nowrap">${planCell(g)}</td>
+            <td class="num">${g.views30}${g.conversion != null ? h`<div class="small muted">${g.conversion}% booked</div>` : ''}</td>
             <td class="num">${g.bookings30}</td><td class="num">${money(g.revenue30)}</td>
             <td class="num ${g.waitingPayments ? 'amber strong' : 'muted'}">${g.waitingPayments || '—'}</td>
             <td class="small nowrap">${ago(g.lastLogin)}</td>
@@ -811,9 +836,9 @@ async function adminPage() {
     actions: {
       refresh: () => route(),
       csv: () => downloadCsv(`goarena-grounds-${d.today}.csv`, [
-        ['Ground', 'Link', 'Area', 'Owner', 'Phone', 'Email', 'Approved', 'Service', 'Plan', 'Price per month', 'Paid until', 'Bookings 30d', 'Booked 30d', 'Payments to check', 'Last login', 'Photos', 'UPI', 'Razorpay', 'Helpers', 'Joined'],
+        ['Ground', 'Link', 'Area', 'Owner', 'Phone', 'Email', 'Approved', 'Service', 'Plan', 'Price per month', 'Paid until', 'Visits 30d', 'Bookings 30d', 'Booked 30d', 'Payments to check', 'Last login', 'Photos', 'UPI', 'Razorpay', 'Helpers', 'Joined'],
         ...list.map((g) => [g.name, `https://book.goarena.in/${g.slug}`, g.area, g.owner, g.phone, g.email, g.approved ? 'yes' : 'no', g.service, g.plan, g.planEnabled ? g.planAmount : '', g.paidUntil || '',
-          g.bookings30, g.revenue30, g.waitingPayments, g.lastLogin ? new Date(g.lastLogin).toISOString() : '', g.photos, g.hasUpi ? 'yes' : 'no', g.razorpay ? 'yes' : 'no', g.helpers, new Date(g.createdAt).toISOString().slice(0, 10)]),
+          g.views30, g.bookings30, g.revenue30, g.waitingPayments, g.lastLogin ? new Date(g.lastLogin).toISOString() : '', g.photos, g.hasUpi ? 'yes' : 'no', g.razorpay ? 'yes' : 'no', g.helpers, new Date(g.createdAt).toISOString().slice(0, 10)]),
       ]),
     },
   });
@@ -827,6 +852,100 @@ async function adminPage() {
   box.addEventListener('input', apply);
   if (box.value) apply();
   document.querySelectorAll('tr[data-go]').forEach((tr) => tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(tr.dataset.go); }));
+}
+
+function trafficCard(d) {
+  const t = d.traffic, f = t.funnel;
+  const max = Math.max(1, ...t.days.map((x) => x.views));
+  const step = (label, n, of) => h`<div class="funnel-row"><span class="small">${label}</span><div class="funnel-bar"><i style="width:${of ? Math.max(2, Math.round((n / of) * 100)) : 0}%"></i></div><span class="small strong num">${n}</span></div>`;
+  return h`<div class="card"><div class="row between"><div class="heading">Traffic, 30 days</div><span class="small muted">${t.conversion != null ? `${t.conversion}% of visits booked` : ''}</span></div>
+    <div class="spark" aria-label="Page visits per day">${t.days.map((x) => h`<div class="spark-col" title="${shortDate(x.date)}: ${x.views} visits, ${x.bookings} bookings started">
+      <div class="spark-bar" style="height:${Math.round((x.views / max) * 100)}%"></div>${x.bookings ? h`<i class="spark-dot"></i>` : ''}</div>`)}</div>
+    <div class="row between small muted"><span>${shortDate(t.days[0].date)}</span><span>Bars: page visits · dots: days with bookings</span><span>Today</span></div>
+    <div class="col gap8">
+      ${step('Page visits', t.views30, t.views30)}
+      ${step('Checked free slots', t.slotViews30, t.views30)}
+      ${step('Held a slot', f.holds, t.views30)}
+      ${step('Paid / sent proof', f.paid, t.views30)}
+      ${step('Confirmed', f.confirmed, t.views30)}
+    </div>
+    <div class="small muted">${f.expired} holds ran out unpaid · ${f.rejected} rejected · ${f.cancelled} cancelled · ${f.online} tried Razorpay · ${money(d.stats.revenue30)} booked</div></div>`;
+}
+
+function profileCard(d) {
+  const p = d.profile, g = d.ground;
+  return h`<form class="card" data-form="profile"><div class="heading">Owner &amp; business</div>
+    <div class="small muted">Login phone <span class="strong">${p.ownerPhone || '—'}</span>${p.ownerGoogle ? h` · Google <span class="strong">${p.ownerGoogle}</span>` : ''}${g.email ? ` · signed up with ${g.email}` : ''}</div>
+    <div class="grid2"><div class="field"><label>Owner's full name</label><input class="input" name="ownerName" value="${p.ownerName}"></div>
+      <div class="field"><label>Business / legal name</label><input class="input" name="businessName" value="${p.businessName}" placeholder="for invoices"></div></div>
+    <div class="grid2"><div class="field"><label>Email for invoices</label><input class="input" name="contactEmail" type="email" value="${p.contactEmail}"></div>
+      <div class="field"><label>Other phone</label><input class="input" name="altPhone" type="tel" inputmode="numeric" value="${p.altPhone}"></div></div>
+    <div class="field"><label>Address</label><textarea class="input" name="address" rows="2">${p.address}</textarea></div>
+    <div class="field"><label>GSTIN (if any)</label><input class="input" name="gstin" value="${p.gstin}" maxlength="15" style="text-transform:uppercase"></div>
+    <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save owner details</button></form>`;
+}
+
+function setupCard(d) {
+  const s = d.setup;
+  const row = (k, v) => h`<div class="row between small gap12"><span class="muted nowrap">${k}</span><span class="strong right">${v}</span></div>`;
+  return h`<div class="card"><div class="row between"><div class="heading">Ground setup</div><button class="link" data-act="asOwner">Edit as owner</button></div>
+    ${s.photos.length ? h`<div class="thumbs">${s.photos.map((u) => h`<a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="Ground photo" loading="lazy"></a>`)}</div>` : h`<p class="small red">No photos yet.</p>`}
+    <table class="mini"><thead><tr><th>Court</th><th class="num">Mon–Fri</th><th class="num">Sat–Sun</th></tr></thead>
+      <tbody>${s.units.map((u) => h`<tr><td>${u.name}${u.subtitle ? h` <span class="muted">${u.subtitle}</span>` : ''}</td><td class="num">${money(u.weekday)}</td><td class="num">${money(u.weekend)}</td></tr>`)}</tbody></table>
+    ${row('Open', `${hourLabel(s.openHour)} – ${hourLabel(s.closeHour % 24)}`)}
+    ${row('Hold time', `${s.holdMinutes} min`)}
+    ${row('Books ahead', `${s.bookingDays} days`)}
+    ${row('UPI', s.upiId ? `${s.upiId}${s.upiName ? ` (${s.upiName})` : ''}` : h`<span class="red">not set</span>`)}
+    ${row('UPI QR image', s.upiQr ? 'uploaded' : 'none')}
+    ${row('Customer phone / WhatsApp', s.whatsapp || '—')}
+    ${row('Map', s.mapsUrl ? h`<a class="link" href="${s.mapsUrl}" target="_blank" rel="noopener">open ↗</a>` : '—')}
+    ${s.facilities.length ? h`<div class="chips">${s.facilities.map((f) => h`<span class="chip">${f}</span>`)}</div>` : ''}
+    ${s.about ? h`<p class="small muted">${s.about}</p>` : ''}</div>`;
+}
+
+const RZP_STATUS = { captured: 'green', authorized: 'amber', failed: 'red', refunded: '', created: '' };
+function rzpPaymentsTable(list) {
+  if (!list.length) return h`<p class="small muted">No payments in this Razorpay account yet.</p>`;
+  return h`<div class="table-scroll"><table class="mini"><thead><tr><th>When</th><th class="num">₹</th><th>Status</th><th>Method</th><th>Booking</th><th>Payment / problem</th></tr></thead><tbody>
+    ${list.map((p) => h`<tr><td class="nowrap">${when(p.createdAt)}</td><td class="num">${p.amount}</td>
+      <td><span class="pill ${RZP_STATUS[p.status] || ''}">${p.status}</span>${p.refundStatus ? h` <span class="pill">refund ${p.refundStatus}</span>` : ''}</td>
+      <td class="small">${p.method}${p.vpa ? ` · ${p.vpa}` : ''}</td>
+      <td class="small">${p.booking ? h`<span class="strong">${p.booking.ref}</span> <span class="muted">${p.booking.status.toLowerCase()}</span>` : h`<span class="muted">${p.orderId ? 'not a GoArena order' : '—'}</span>`}</td>
+      <td class="small"><code>${p.id}</code>${p.error ? h`<div class="red">${p.error}${p.errorReason ? ` (${p.errorReason})` : ''}</div>` : ''}</td></tr>`)}
+  </tbody></table></div>`;
+}
+
+function razorpayCard(d) {
+  const r = d.razorpay;
+  if (!r.connected) return h`<div class="card"><div class="heading">Razorpay</div><p class="small muted">Not connected. Customers pay by UPI and send a screenshot. The owner connects Razorpay in their Settings (or use "Open owner view").</p></div>`;
+  return h`<div class="card"><div class="row between"><div class="heading">Razorpay</div>
+      <div class="row gap8"><span class="pill ${r.mode === 'live' ? 'green' : 'amber'}">${r.mode === 'live' ? 'Live' : 'Test mode'}</span>${r.enabled ? '' : h`<span class="pill">switched off</span>`}</div></div>
+    <div class="row between small"><span class="muted">Key ID</span><code>${r.keyId}</code></div>
+    <div class="row between small"><span class="muted">Connected</span><span>${r.connectedAt ? when(r.connectedAt) : '—'}</span></div>
+    <div class="row between small"><span class="muted">Last key check</span><span class="${r.checkError ? 'red' : ''}">${r.checkedAt ? `${r.checkError ? 'Failed' : 'OK'} · ${when(r.checkedAt)}` : 'never'}</span></div>
+    ${r.checkError ? h`<div class="banner red small">${r.checkError}</div>` : ''}
+    ${r.mode === 'test' ? h`<div class="banner amber small">Test keys: no real money moves. Switch to Live keys before customers pay.</div>` : ''}
+    <div class="chips"><button class="chip" data-act="rzpTest">Test connection</button><button class="chip" data-act="rzpLoad">Load latest payments</button><button class="chip red" data-act="rzpOff">Disconnect</button></div>
+    <div id="rzpList"></div>
+    <div class="strong small">GoArena bookings paid online</div>
+    ${r.bookings.length ? h`<div class="table-scroll"><table class="mini"><thead><tr><th>Booking</th><th>Slot</th><th>Status</th><th>Razorpay</th><th></th></tr></thead><tbody>
+      ${r.bookings.map((b) => h`<tr><td class="strong nowrap">${b.ref}</td><td class="nowrap small">${shortDate(b.date)} ${hourLabel(b.hour)}</td>
+        <td><span class="pill ${b.status === 'CONFIRMED' ? 'green' : b.status === 'HOLD' ? 'amber' : ''}">${b.status.toLowerCase()}</span>${b.refundNeeded ? h` <span class="pill red">refund due</span>` : ''}</td>
+        <td class="small"><code>${b.paymentId || b.orderId}</code></td>
+        <td>${b.paymentId ? '' : h`<button class="link" data-act="recheckRef" data-ref="${b.ref}">Re-check</button>`}</td></tr>`)}</tbody></table></div>`
+      : h`<p class="small muted">None yet.</p>`}
+    <form class="row gap8" data-form="recheck"><input class="input" name="ref" placeholder="Booking code, e.g. GB-7K3QX" style="text-transform:uppercase"><button class="btn small secondary" type="submit">Re-check</button></form>
+    <div class="form-error banner red hidden" role="alert"></div>
+    <p class="small muted">Re-check asks Razorpay whether the customer actually paid and confirms the booking if so (the same check runs every 5 minutes for the last 6 hours).</p></div>`;
+}
+
+async function adminErrors() {
+  const d = await adminApi('GET', '/api/admin/errors');
+  if (!d) return;
+  render(h`<div class="screen wide">${topbar('Errors, last 30 days', '/admin')}<div class="content tight">
+    <p class="small muted">Server errors, Razorpay problems and errors on customers' or owners' phones. Tap one for details. Older than 30 days are deleted.</p>
+    <div class="card">${d.errors.length ? d.errors.map((e) => errorRow(e, true)) : h`<p class="small muted">No errors. 🎉</p>`}</div>
+  </div></div>`);
 }
 
 async function adminGround(id) {
@@ -845,10 +964,7 @@ async function adminGround(id) {
         <div class="btn-row" style="max-width:420px"><button class="btn danger" data-act="reject">Turn down</button><button class="btn primary" data-act="approve">Approve</button></div></div>`}
       <div class="admin-grid">
       <div class="col gap16">
-      <div class="stats">
-        <div class="card"><span class="small muted">Bookings, 30 days</span><span class="title">${d.stats.bookings30}</span><span class="small muted">${money(d.stats.revenue30)} booked</span></div>
-        <div class="card"><span class="small muted">Set up</span><span class="small">${g.photos} photos</span><span class="small">${g.upiId ? `UPI: ${g.upiId}` : 'No UPI ID'}${g.razorpay ? ' · Razorpay on' : ''}</span></div>
-      </div>
+      ${trafficCard(d)}
 
       <form class="card" data-form="service"><div class="heading">Service</div>
         <div class="seg">${Object.entries(SERVICE).map(([k, [label]]) => h`<label><input type="radio" name="service" value="${k}" ${k === g.service ? 'checked' : ''}><span>${label}</span></label>`)}</div>
@@ -878,6 +994,8 @@ async function adminGround(id) {
         ${d.payments.length ? h`<div class="col gap8" style="border-top:1px solid var(--border);padding-top:12px"><div class="small strong">Payments</div>${d.payments.map((p) => h`<div class="row between small"><span>${shortDate(p.paidOn)} · ${p.months} mo${p.note ? ` · ${p.note}` : ''}</span><span class="strong">${money(p.amount)}</span></div>`)}</div>` : ''}
       </div>
 
+      ${profileCard(d)}
+
       <form class="card" data-form="note"><div class="heading">Private notes</div>
         <textarea class="input" name="adminNote" rows="3" placeholder="Only GoArena admins see this">${g.adminNote}</textarea>
         <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Save notes</button></form>
@@ -894,6 +1012,10 @@ async function adminGround(id) {
             ${p.googleEmail ? h`<button class="chip" data-act="unlink" data-id="${p.id}" data-name="${p.name}">Remove Google</button>` : ''}</div></div>`)}
       </div>
 
+      ${setupCard(d)}
+
+      ${razorpayCard(d)}
+
       <div class="card only-mobile"><div class="heading">Remote help</div>
         <p class="small muted">Open the owner's screens in this browser to fix prices, photos or bookings for them. Log out first to come back here as yourself.</p>
         <div class="btn-row"><button class="btn secondary" data-act="asOwner">Open owner view</button><button class="btn danger" data-act="logoutAll">Log everyone out</button></div></div>
@@ -901,6 +1023,9 @@ async function adminGround(id) {
       <div class="card"><div class="heading">Latest bookings</div>
         ${d.recent.length ? d.recent.map((b) => h`<div class="row between small"><span>${dayShort(b.date)} ${shortDate(b.date)} ${hourLabel(b.hour)} · ${b.name || 'Walk-in'} · ${b.unit}</span><span class="${b.status === 'CONFIRMED' ? 'strong' : 'muted'}">${b.status === 'CONFIRMED' ? money(b.amount) : b.status.toLowerCase()}</span></div>`)
           : h`<p class="small muted">No bookings yet.</p>`}</div>
+
+      <div class="card"><div class="row between"><div class="heading">Errors</div><span class="small muted">last 30 days</span></div>
+        ${d.errors.length ? d.errors.map((e) => errorRow(e)) : h`<p class="small muted">No errors for this ground.</p>`}</div>
 
       <div class="card"><div class="heading">Activity</div>
         ${d.log.length ? d.log.map((l) => h`<div class="small"><span class="strong">${l.action}</span>${l.detail ? ` · ${l.detail}` : ''}<div class="muted">${new Date(l.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${l.email}</div></div>`)
@@ -910,6 +1035,16 @@ async function adminGround(id) {
     </div></div>`, {
     actions: {
       approve: async () => { await adminApi('POST', `/api/admin/grounds/${id}/approve`); reload('Approved. Customers can book now.'); },
+      rzpTest: async () => { const r = await adminApi('POST', `/api/admin/grounds/${id}/razorpay/test`); if (r) reload(r.ok ? 'Razorpay keys work' : `Razorpay check failed: ${r.error}`); },
+      rzpLoad: async (el) => {
+        el.disabled = true; el.textContent = 'Loading from Razorpay…';
+        try {
+          const r = await adminApi('GET', `/api/admin/grounds/${id}/razorpay/payments`);
+          if (r) document.getElementById('rzpList').innerHTML = String(rzpPaymentsTable(r.payments));
+        } finally { el.disabled = false; el.textContent = 'Reload latest payments'; }
+      },
+      rzpOff: async () => { if (!confirm(`Disconnect Razorpay for ${g.name}? Customers will pay by UPI + screenshot. The owner has to enter keys again to reconnect.`)) return; await adminApi('DELETE', `/api/admin/grounds/${id}/razorpay`); reload('Razorpay disconnected'); },
+      recheckRef: async (el) => { const r = await adminApi('POST', `/api/admin/grounds/${id}/razorpay/recheck`, { ref: el.dataset.ref }); if (r) reload(`${r.ref}: ${r.result} (${r.before} → ${r.after})`); },
       reject: async () => { if (!confirm(`Turn down ${g.name}? Its page and logins stop working.`)) return; await adminApi('POST', `/api/admin/grounds/${id}/reject`); go('/admin', true); },
       resetPin: async (el) => {
         if (!confirm(`Give ${el.dataset.name} a new PIN? Their old PIN stops working and they are logged out.`)) return;
@@ -947,6 +1082,8 @@ async function adminGround(id) {
         if (r) reload(`Paid until ${shortDate(r.paidUntil)}`);
       },
       plan: async (f) => { await adminApi('PUT', `/api/admin/grounds/${id}/plan`, { planAmount: Number(f.planAmount), paidUntil: f.paidUntil || null, adminNote: g.adminNote }); reload('Plan saved'); },
+      profile: async (f) => { await adminApi('PUT', `/api/admin/grounds/${id}/profile`, f); reload('Owner details saved'); },
+      recheck: async (f) => { const r = await adminApi('POST', `/api/admin/grounds/${id}/razorpay/recheck`, f); if (r) reload(`${r.ref}: ${r.result} (${r.before} → ${r.after})`); },
       note: async (f) => { await adminApi('PUT', `/api/admin/grounds/${id}/plan`, { planAmount: g.planAmount, paidUntil: g.paidUntil, adminNote: f.adminNote }); reload('Notes saved'); },
     },
   });

@@ -12,7 +12,7 @@ export function fakeRazorpay() {
     if (atob(auth) !== `${KEY_ID}:${KEY_SECRET}`) return reply(401, { error: { description: 'Authentication failed' } });
     const path = new URL(url).pathname.replace('/v1', '');
     let m;
-    if (init.method === 'GET' && path === '/payments') return reply(200, { items: [] });
+    if (init.method === 'GET' && path === '/payments') return reply(200, { items: Object.values(payments).reverse() });
     if (init.method === 'POST' && path === '/orders') {
       const b = JSON.parse(init.body);
       const id = `order_${++n}`;
@@ -27,7 +27,8 @@ export function fakeRazorpay() {
   // Simulates the customer paying in Razorpay Checkout.
   const pay = (orderId, status = 'authorized', amount) => {
     const id = `pay_${++n}`;
-    payments[id] = { id, order_id: orderId, amount: amount ?? orders[orderId].amount, currency: 'INR', status };
+    payments[id] = { id, order_id: orderId, amount: amount ?? orders[orderId].amount, currency: 'INR', status, method: 'upi', created_at: Math.floor(Date.now() / 1000),
+      ...(status === 'failed' ? { error_code: 'BAD_REQUEST_ERROR', error_description: 'Payment failed because the UPI app declined it', error_reason: 'payment_declined' } : {}) };
     const signature = createHmac('sha256', KEY_SECRET).update(`${orderId}|${id}`).digest('hex');
     return { razorpay_order_id: orderId, razorpay_payment_id: id, razorpay_signature: signature };
   };
