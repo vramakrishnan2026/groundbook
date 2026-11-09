@@ -47,6 +47,12 @@ try {
   await c.getByRole('button', { name: 'Longer' }).click();      // 9 – 11 PM
   await expectText(c, '9 PM – 11 PM');
   await expectText(c, '2 hours');
+  await c.getByRole('button', { name: '10 PM free' }).click();   // tapping the pick clears it
+  await expectText(c, 'Tap a green block to start');
+  if (!(await c.getByRole('button', { name: 'Continue' }).isDisabled())) throw new Error('Continue should be off after clearing');
+  await c.getByRole('button', { name: '9 PM free' }).click();
+  await c.getByRole('button', { name: 'Longer' }).click();
+  await expectText(c, '9 PM – 11 PM');
   await shot(c, 'customer-slots', true);
   await c.getByRole('button', { name: 'Continue' }).click();
   await expectText(c, 'Your details');

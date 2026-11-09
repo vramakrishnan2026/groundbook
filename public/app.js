@@ -468,7 +468,7 @@ async function customerSlots(slug, data, q) {
         const t = Number(el.dataset.start);
         // Tapping the free block right after the selection makes it longer; anything else starts afresh.
         if (start !== null && t === start + dur && room(start) >= dur + step) { dur += step; return update(); }
-        if (start !== null && t >= start && t < start + dur) return;
+        if (start !== null && t >= start && t < start + dur) { start = null; dur = minDur; return update(); } // tap the pick again to clear it
         const r = room(t);
         if (r < minDur) { toast(`From ${minLabel(t)} there isn't a full hour free. Pick another time.`); return; }
         start = t; dur = Math.max(minDur, Math.min(dur, r));
@@ -488,7 +488,14 @@ async function customerSlots(slug, data, q) {
       el.classList.toggle('sel-first', on && t === start);
       el.classList.toggle('sel-last', on && t + step === start + dur);
     });
-    if (start === null) return;
+    if (start === null) {
+      document.getElementById('dur').classList.add('hidden');
+      document.getElementById('sum').classList.add('hidden');
+      document.getElementById('next').disabled = true;
+      document.getElementById('dur-hint').textContent = `Tap a green block to start. Minimum 1 hour${step === 30 ? ', then add 30 minutes at a time' : ', then add an hour at a time'}.`;
+      history.replaceState(null, '', url({}));
+      return;
+    }
     const total = priceForDur(price, dur);
     document.getElementById('dur').classList.remove('hidden');
     document.getElementById('dur-len').textContent = durLabel(dur);
