@@ -402,11 +402,19 @@ function customerHome(slug, data) {
   }, { passive: true });
 }
 
+// Free times for one date cover every court, so switching court reuses them
+// instead of asking the server again. Date changes still fetch.
+let slotsCache = null, reuseSlots = false;
+
 async function customerSlots(slug, data, q) {
   const date = data.dates.some((d) => d.date === q.get('date')) ? q.get('date') : data.dates[0].date;
   const unitId = Number(q.get('unit')) || data.units[0].id;
   const unit = data.units.find((u) => u.id === unitId) || data.units[0];
-  const slots = await api('GET', `/api/g/${slug}/slots?date=${date}`);
+  const key = `${slug}|${date}`;
+  const slots = reuseSlots && slotsCache && slotsCache.key === key && Date.now() - slotsCache.at < 60000
+    ? slotsCache.data
+    : (slotsCache = { key, at: Date.now(), data: await api('GET', `/api/g/${slug}/slots?date=${date}`) }).data;
+  reuseSlots = false;
   const step = slots.step || 60, minDur = slots.minDur || 60, maxDur = slots.maxDur || 240;
   const price = slots.prices[unit.id];
   // The bar is made of blocks the length of the ground's step (1 hour, or 30 minutes).
@@ -465,7 +473,7 @@ async function customerSlots(slug, data, q) {
     </div></div>`, {
     actions: {
       date: (el) => go(url({ date: el.dataset.date }), true),
-      unit: (el) => go(url({ unit: el.dataset.unit, ...(start !== null ? { start, dur } : {}) }), true),
+      unit: (el) => { reuseSlots = true; go(url({ unit: el.dataset.unit, ...(start !== null ? { start, dur } : {}) }), true); },
       pick: (el) => {
         const t = Number(el.dataset.start);
         // Tapping the free block right after the selection makes it longer; anything else starts afresh.
