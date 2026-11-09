@@ -47,7 +47,9 @@ try {
   await c.getByRole('button', { name: 'Longer' }).click();      // 9 – 11 PM
   await expectText(c, '9 PM – 11 PM');
   await expectText(c, '2 hours');
-  await c.getByRole('button', { name: '10 PM free' }).click();   // tapping the pick clears it
+  await c.getByRole('button', { name: '10 PM free' }).click();   // tapping the extra hour takes just that off
+  await expectText(c, '9 PM – 10 PM');
+  await c.getByRole('button', { name: '9 PM free' }).click();    // under 1 hour would be left, so it clears
   await expectText(c, 'Tap a green block to start');
   if (!(await c.getByRole('button', { name: 'Continue' }).isDisabled())) throw new Error('Continue should be off after clearing');
   await c.getByRole('button', { name: '9 PM free' }).click();
