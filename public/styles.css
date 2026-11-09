@@ -435,3 +435,5 @@ form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
 .powered b { color: var(--text); }
 .splash { position: fixed; inset: 0; z-index: 1000; background: radial-gradient(circle at 50% 45%, #0f4f2b, #020a06 72%); transition: opacity .35s; cursor: pointer; overflow: hidden; }
 .splash.out { opacity: 0; pointer-events: none; }
+.hero .hero-brand { position: absolute; top: 14px; right: 14px; z-index: 3; display: flex; align-items: center; padding: 7px 12px; border-radius: 999px; background: rgba(3,20,12,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.hero .hero-brand img { display: block; width: 104px; height: auto; }

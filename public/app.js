@@ -356,6 +356,7 @@ function customerHome(slug, data) {
       <div class="strip" id="strip">${photos.map((src, i) => h`<img src="${src}" alt="${sample ? 'Sample football ground photo' : `${g.name} photo ${i + 1}`}" ${i ? raw('loading="lazy"') : ''} onerror="this.remove()">`)}</div>
       <div class="shade"></div>
       ${sample ? h`<span class="sample">Sample photo</span>` : ''}
+      <a class="hero-brand" href="/" data-go="/" aria-label="GoArena"><img src="/brand/wordmark-on-dark.webp" alt="GoArena" width="104" height="24"></a>
       <div class="over">
         <h1 class="hero-title">${g.name}</h1>
         ${g.area ? h`<div class="hero-sub row">${icon('pin', 16)} ${g.area}</div>` : ''}
@@ -1746,7 +1747,9 @@ async function helperPage() {
 // pages (never on a ground's booking page), skipped for reduced motion, a tap skips it.
 function splash() {
   const p = location.pathname;
-  const ours = p === '/' || /^\/(login|signup|owner|helper|admin)(\/|$)/.test(p);
+  // GoArena's own pages, and a ground's main page (not the slot, payment or confirmation steps)
+  const groundHome = /^\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/.test(p) && !new URLSearchParams(location.search).get('step');
+  const ours = p === '/' || groundHome || /^\/(login|signup|owner|helper|admin)(\/|$)/.test(p);
   const force = new URLSearchParams(location.search).has('splash');           // for checking it by hand
   if (!force && (!ours || navigator.webdriver || sessionStorage.getItem('gb_splash') || matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
   sessionStorage.setItem('gb_splash', '1');
