@@ -53,6 +53,8 @@ const ICONS = {
   minus: '<path d="M5 12h14"/>',
   trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
 };
+// WhatsApp mark for anything that opens WhatsApp (drawn here; green bubble, white handset).
+const waIcon = (s = 18) => raw(`<svg class="wa-ic" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path class="b" d="M12 2.3a9.7 9.7 0 0 0-8.3 14.7L2.3 21.7l4.8-1.3A9.7 9.7 0 1 0 12 2.3z"/><path class="p" d="M9.1 7.1c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.3.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.9 4.5 4 2.2.9 2.7.7 3.2.7.5-.1 1.6-.7 1.8-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.5-.3l-1.8-.9c-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.5-1.4-1.8-.1-.3 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2z"/></svg>`);
 const icon = (n, s = 20) => raw(`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
 
 const money = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
@@ -171,7 +173,7 @@ async function googleClientId() {
 // "WhatsApp us": chat with the GoArena team (number comes from the server).
 const supportLink = (num, text) => `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
 const supportBtn = (num, text, label = 'WhatsApp us', cls = 'btn secondary small') => (num
-  ? h`<a class="${cls}" href="${supportLink(num, text)}" target="_blank" rel="noopener">${icon('chat', 16)} ${label}</a>` : '');
+  ? h`<a class="${cls}" href="${supportLink(num, text)}" target="_blank" rel="noopener">${waIcon(16)} ${label}</a>` : '');
 function loadGsi() {
   if (window.google?.accounts?.id) return Promise.resolve(true);
   gsiLoading = gsiLoading || new Promise((resolve) => {
@@ -578,7 +580,7 @@ async function bookingPage(token) {
     ${kv('Booking ID', b.ref)}${kv('Name', b.name)}${kv('Date', fmtDate(b.date))}${kv('Time', b.timeLabel)}${kv('Court', [b.unit.name, b.unit.subtitle].filter(Boolean).join(' · '))}
     <div class="divider"></div>${kv(b.status === 'CONFIRMED' ? (b.paidVia === 'razorpay' ? 'Paid online' : 'Paid') : 'Amount', money(b.amount), 'total')}</div>`;
   const contact = g.whatsapp ? h`<div class="btn-row">
-      <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${minLabel(startOf(b))}.`)}" target="_blank" rel="noopener">${icon('chat', 18)} WhatsApp</a>
+      <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${minLabel(startOf(b))}.`)}" target="_blank" rel="noopener">${waIcon(18)} WhatsApp</a>
       <a class="btn soft" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call ground</a></div>` : '';
   const result = (circle, title, text, extra = '', footer = '') => render(h`<div class="screen" ${photoBg(groundPhoto(g.slug))}>
     ${topbar(g.name, `/${g.slug}`)}
@@ -807,13 +809,13 @@ function signupPage() {
         <p class="small muted center">Already set up? <a class="link" href="/login" data-go="/login" style="color:#4ade80">Log in</a></p>
         <p class="small muted center" id="supportLine"></p>
       </div></div></div>`);
-    getConfig().then((c) => { const el = document.getElementById('supportLine'); if (el && c.supportWhatsapp) el.innerHTML = String(h`Questions first? <a class="link" style="color:#4ade80" href="${supportLink(c.supportWhatsapp, 'Hi GoArena, I have a question about listing my ground.')}" target="_blank" rel="noopener">WhatsApp us</a>`); });
+    getConfig().then((c) => { const el = document.getElementById('supportLine'); if (el && c.supportWhatsapp) el.innerHTML = String(h`Questions first? <a class="link" style="color:#4ade80" href="${supportLink(c.supportWhatsapp, 'Hi GoArena, I have a question about listing my ground.')}" target="_blank" rel="noopener">${waIcon(15)} WhatsApp us</a>`); });
     googleButton('gbtn', (c) => { credential = c; step2(); }, { text: 'signup_with', dark: true }).then((ok) => {
       if (!ok && document.getElementById('gbtn')) document.getElementById('gbtn').innerHTML = '<p class="small muted center">Sign-up opens soon. Ask GoArena to set up your ground.</p>';
     });
   };
   const step2 = () => {
-    getConfig().then((c) => { const el = document.getElementById('supportLine2'); if (el && c.supportWhatsapp) el.innerHTML = String(h`Stuck? <a class="link" href="${supportLink(c.supportWhatsapp, 'Hi GoArena, I need help signing up my ground.')}" target="_blank" rel="noopener">WhatsApp us</a>`); });
+    getConfig().then((c) => { const el = document.getElementById('supportLine2'); if (el && c.supportWhatsapp) el.innerHTML = String(h`Stuck? <a class="link" href="${supportLink(c.supportWhatsapp, 'Hi GoArena, I need help signing up my ground.')}" target="_blank" rel="noopener">${waIcon(15)} WhatsApp us</a>`); });
     render(h`<div class="screen">${topbar('Your ground', '/signup')}
       <form class="content" data-form="signup" novalidate>
         <div class="field"><label for="groundName">Ground name</label><input class="input" id="groundName" name="groundName" placeholder="e.g. Kick Off Arena" required></div>
@@ -924,8 +926,8 @@ async function adminPage() {
         <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div></div>
     <p class="small muted">Visits and errors are counted by GoArena per ground. Site-wide traffic, countries and server logs: <a class="link" href="${CF_DASH}" target="_blank" rel="noopener">Cloudflare dashboard ↗</a> (Workers &amp; Pages → groundbook → Metrics / Logs).</p>
     ${d.alertsReady
-      ? h`<div class="row between wrap gap8 small muted"><span>${icon('chat', 16)} New sign-ups are sent to your WhatsApp.</span><button class="btn soft small" data-act="notifyTest">Send a test alert</button></div>`
-      : h`<div class="banner amber">${icon('chat', 20)}<div><div class="strong">Turn on WhatsApp alerts for new sign-ups</div>
+      ? h`<div class="row between wrap gap8 small muted"><span>${waIcon(16)} New sign-ups are sent to your WhatsApp.</span><button class="btn soft small" data-act="notifyTest">Send a test alert</button></div>`
+      : h`<div class="banner amber">${waIcon(20)}<div><div class="strong">Turn on WhatsApp alerts for new sign-ups</div>
         <div>1. Open <a class="link" href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">callmebot.com's WhatsApp page</a>, save the bot's number in the admin WhatsApp, and send it: <b>I allow callmebot to send me messages</b><br>
         2. It replies with an API key. In Cloudflare: Workers → groundbook → Settings → Variables and secrets → Add, type <b>Secret</b>, name <b>CALLMEBOT_KEY</b>, paste the key, Deploy.<br>
         3. Come back here and tap "Send a test alert".</div></div></div>`}
@@ -1217,7 +1219,7 @@ async function adminGround(id) {
         const msg = `Your new GoArena PIN for ${g.name} is ${r.pin}. Log in at https://book.goarena.in/login with ${r.phone} and change it in Settings.`;
         openSheet(h`<div class="title center">New PIN for ${r.name}</div><div class="display center" style="letter-spacing:6px">${r.pin}</div>
           <p class="small muted center">Shown only once. Send it to them now.</p>
-          <a class="btn primary" href="${waLink(r.phone, msg)}" target="_blank" rel="noopener">${icon('chat', 18)} Send on WhatsApp</a>
+          <a class="btn primary" href="${waLink(r.phone, msg)}" target="_blank" rel="noopener">${waIcon(18)} Send on WhatsApp</a>
           <button class="btn secondary" data-act="pinDone">Done</button>`, { pinDone: () => { closeSheet(); reload(); } });
       },
       phone: async (el) => {
@@ -1360,7 +1362,7 @@ async function ownerReview(id) {
   const when = `${fmtDate(b.date)}, ${b.timeLabel}`;
   const done = (title, text, msg) => openSheet(h`<div class="circle big ${title.startsWith('Approved') ? 'primary' : 'red'}" style="margin:0 auto">${icon(title.startsWith('Approved') ? 'check' : 'x', 40)}</div>
     <div class="title center">${title}</div><p class="small muted center">${text}</p>
-    ${b.phone ? h`<a class="btn primary" href="${waLink(b.phone, msg)}" target="_blank" rel="noopener">${icon('chat', 18)} Tell ${b.name} on WhatsApp</a>` : ''}
+    ${b.phone ? h`<a class="btn primary" href="${waLink(b.phone, msg)}" target="_blank" rel="noopener">${waIcon(18)} Tell ${b.name} on WhatsApp</a>` : ''}
     <button class="btn secondary" data-go="/owner">Back to Today</button>`);
   render(h`<div class="screen">
     ${topbar('Check payment', '/owner')}
