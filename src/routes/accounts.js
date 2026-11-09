@@ -3,7 +3,7 @@ import { startSession } from '../lib/auth.js';
 import { googleEnabled, verifyGoogle } from '../lib/google.js';
 import { HttpError, bad, cleanName, cleanPhone, cleanPin, cleanText, hashPin, json, readJson } from '../lib/util.js';
 
-export const RESERVED_SLUGS = ['g', 'b', 'api', 'login', 'owner', 'helper', 'img', 'vendor', 'admin', 'www', 'app', 'static', 'signup', 'start', 'terms', 'privacy', 'refunds', 'contact', 'about', 'pricing'];
+export const RESERVED_SLUGS = ['g', 'b', 'api', 'login', 'owner', 'helper', 'img', 'vendor', 'fonts', 'posters', 'admin', 'www', 'app', 'static', 'signup', 'start', 'terms', 'privacy', 'refunds', 'contact', 'about', 'pricing'];
 const MAX_GROUNDS_PER_ACCOUNT = 3;
 
 export function config(env) {

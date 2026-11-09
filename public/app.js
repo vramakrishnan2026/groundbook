@@ -252,6 +252,7 @@ const ROUTES = [
   [/^\/owner\/?$/, () => ownerToday()],
   [/^\/owner\/calendar\/?$/, () => ownerCalendar()],
   [/^\/owner\/settings\/?$/, () => ownerSettings()],
+  [/^\/owner\/posters\/?$/, () => ownerPosters()],
   [/^\/owner\/review\/(\d+)\/?$/, (m) => ownerReview(m[1])],
   [/^\/helper\/?$/, () => helperPage()],
   [/^\/signup\/?$/, () => signupPage()],
@@ -1390,6 +1391,133 @@ function mountGoogleLink(me) {
   }, { text: 'continue_with' });
 }
 
+// ---------- QR posters: three designs, print and social sizes, made on the phone
+function downloadBlob(name, blob) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const imgSize = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res([i.naturalWidth, i.naturalHeight]); i.onerror = () => res([0, 0]); i.src = src; });
+
+async function ownerPosters() {
+  const [s, P] = await Promise.all([api('GET', '/api/owner/settings'), import('./posters.js')]);
+  const g = s.ground;
+  const link = `${s.publicUrl || location.origin}/${g.slug}`;
+  const prices = s.units.flatMap((u) => [u.weekday, u.weekend]).filter((n) => n > 0);
+  const subs = [...new Set(s.units.map((u) => u.subtitle).filter(Boolean))];
+  const phone = String(g.whatsapp || '').replace(/^91(?=\d{10}$)/, '');
+  const data = {
+    name: g.name, slug: g.slug, area: g.area || '',
+    hours: `${hourLabel(g.openHour)} – ${hourLabel(g.closeHour % 24)}`,
+    priceFrom: prices.length ? money(Math.min(...prices)) : '',
+    phoneLabel: phone.length === 10 ? `Call ${phone.slice(0, 5)} ${phone.slice(5)}` : '',
+    tagline: subs.length ? 'Football · ' + subs.slice(0, 2).join(' & ') : 'Football turf',
+    url: link, urlShort: link.replace(/^https?:\/\//, ''),
+  };
+  const st = { tpl: 'splash', fmt: 'a4', photo: s.photos[0] ? s.photos[0].url : null, local: null };
+  const PRINT = Object.entries(P.POSTER_FORMATS).filter(([, f]) => f.group === 'print');
+  const SOCIAL = Object.entries(P.POSTER_FORMATS).filter(([, f]) => f.group === 'social');
+  const fmtBtn = ([id, f]) => h`<button type="button" class="chip pf ${id === st.fmt ? 'on' : ''}" data-act="fmt" data-id="${id}">${f.label}</button>`;
+  const qrImg = qrPng(link, 16, 4);
+
+  render(h`<div class="screen">${topbar('QR posters', '/owner/settings')}
+    <div class="content tight">
+      <div class="card"><div class="heading">1. Pick a design</div>
+        <div class="poster-tpls">${Object.entries(P.TEMPLATES).map(([id, t]) => h`<button type="button" class="poster-tpl ${id === st.tpl ? 'on' : ''}" data-act="tpl" data-id="${id}"><div class="poster-thumb" id="thumb-${id}"></div><span>${t.name}</span></button>`)}</div></div>
+
+      <div class="card"><div class="heading">2. Pick a size</div>
+        <div class="caption muted">TO PRINT</div><div class="chips">${PRINT.map(fmtBtn)}</div>
+        <div class="caption muted">FOR WHATSAPP AND INSTAGRAM</div><div class="chips">${SOCIAL.map(fmtBtn)}</div></div>
+
+      <div class="card"><div class="heading">3. Pick a photo</div>
+        <div class="poster-photos">${s.photos.map((ph) => h`<button type="button" class="poster-photo ${ph.url === st.photo ? 'on' : ''}" data-act="photo" data-src="${ph.url}"><img src="${ph.url}" alt="Ground photo" loading="lazy"></button>`)}
+          <label class="poster-photo add"><input type="file" accept="image/*" data-change="localPhoto" hidden>${icon('image', 22)}<span>From phone</span></label></div>
+        <p class="small muted">For big prints, pick a sharp photo straight from your phone's camera. It's only used for the poster, not added to your page.</p>
+        <div class="banner amber hidden" id="photoWarn"></div></div>
+
+      <div class="card"><div class="heading" id="pvTitle">Preview</div>
+        <div class="poster-preview" id="preview"><div class="small muted center">Making your poster…</div></div>
+        <div class="small muted center" id="pvInfo"></div>
+        <button class="btn primary" type="button" data-act="download" id="dlBtn">Download</button>
+        <button class="btn soft hidden" type="button" data-act="downloadJpg" id="dlJpg">Download as an image instead</button>
+        <p class="small muted" id="printTip">At the print shop, ask them to print it at actual size, with no white border.</p></div>
+
+      <div class="card"><div class="heading">Just the QR code</div>
+        <img src="${qrImg}" alt="QR code for ${link}" style="width:140px;margin:0 auto">
+        <p class="small muted center">To use in your own design.</p>
+        <a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR code</a></div>
+    </div></div>`, {
+    actions: {
+      tpl: (el) => { st.tpl = el.dataset.id; mark('.poster-tpl', el); draw(); },
+      fmt: (el) => { st.fmt = el.dataset.id; mark('.pf', el); draw(); },
+      photo: (el) => { st.photo = el.dataset.src; st.local = null; mark('.poster-photo', el); draw(true); },
+      download: () => save(P.POSTER_FORMATS[st.fmt].group === 'print' ? 'pdf' : 'jpg'),
+      downloadJpg: () => save('jpg'),
+    },
+    changes: {
+      localPhoto: async (el) => {
+        const f = el.files[0]; if (!f) return;
+        st.local = await P.blobToDataUrl(f); st.photo = st.local;
+        mark('.poster-photo', el.closest('label')); draw(true);
+      },
+    },
+  });
+
+  const mark = (sel, el) => { document.querySelectorAll(sel).forEach((b) => b.classList.toggle('on', b === el)); };
+  let fonts = null, photoUrl = null, photoPx = [0, 0], token = 0;
+  const thumbUrls = {};
+  const svgUrl = (svg) => URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  view.cleanup.push(() => Object.values(thumbUrls).forEach(URL.revokeObjectURL));
+
+  async function draw(photoChanged = false) {
+    const my = ++token;
+    try {
+      fonts ??= await P.fontsCss();
+      if (photoChanged || photoUrl === null) { photoUrl = await P.photoDataUrl(st.photo) || ''; photoPx = photoUrl ? await imgSize(photoUrl) : [0, 0]; }
+      if (my !== token) return;
+      const d = { ...data, photo: photoUrl };
+      if (photoChanged || !Object.keys(thumbUrls).length) for (const id of Object.keys(P.TEMPLATES)) {
+        if (thumbUrls[id]) URL.revokeObjectURL(thumbUrls[id]);
+        thumbUrls[id] = svgUrl(P.posterSVG(id, d, 'a4', fonts));
+        const box = document.getElementById('thumb-' + id); if (box) box.innerHTML = `<img src="${thumbUrls[id]}" alt="">`;
+      }
+      const f = P.POSTER_FORMATS[st.fmt], [w, hh] = P.formatPixels(st.fmt);
+      const pv = document.getElementById('preview'); if (!pv) return;
+      const old = pv.querySelector('img'); if (old) URL.revokeObjectURL(old.src);
+      pv.style.aspectRatio = `1000 / ${Math.round(1000 * f.ratio)}`;
+      pv.innerHTML = `<img src="${svgUrl(P.posterSVG(st.tpl, d, st.fmt, fonts))}" alt="Poster preview">`;
+      document.getElementById('pvTitle').textContent = `${P.TEMPLATES[st.tpl].name} · ${f.label}`;
+      const print = f.group === 'print';
+      document.getElementById('pvInfo').textContent = print
+        ? `${f.mm[0]} × ${f.mm[1]} mm · PDF ready for the print shop`
+        : `${w} × ${hh} pixels`;
+      document.getElementById('dlBtn').textContent = print ? 'Download PDF to print' : 'Download image';
+      document.getElementById('dlJpg').classList.toggle('hidden', !print);
+      document.getElementById('printTip').classList.toggle('hidden', !print);
+      // The photo fills about the full width of the poster; warn when it will look soft.
+      const warn = document.getElementById('photoWarn');
+      const soft = photoPx[0] && print && photoPx[0] < w * 0.45;
+      warn.classList.toggle('hidden', !soft);
+      if (soft) warn.textContent = `This photo is small for a ${f.label.toLowerCase()} and may print a little soft. The QR code and text will still be sharp. For the best result, pick a photo "From phone".`;
+    } catch (e) { reportError(e && (e.stack || e.message)); toast('Could not make the poster. Check your internet and try again.'); }
+  }
+
+  async function save(kind) {
+    const btn = document.getElementById('dlBtn'), was = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Making your file…';
+    try {
+      const [w, hh] = P.formatPixels(st.fmt);
+      const svg = P.posterSVG(st.tpl, { ...data, photo: photoUrl }, st.fmt, fonts);
+      const jpg = await P.renderPoster(svg, w, hh, 'image/jpeg', 0.92);
+      const base = `${g.slug}-${st.tpl}-${st.fmt}`;
+      if (kind === 'pdf') downloadBlob(base + '.pdf', await P.posterPdf(jpg, st.fmt, `${g.name} booking poster`));
+      else downloadBlob(base + '.jpg', jpg);
+      toast('Saved to your downloads');
+    } catch (e) { reportError(e && (e.stack || e.message)); toast(e.message || 'Could not make the file'); }
+    finally { btn.disabled = false; btn.textContent = was; }
+  }
+  draw(true);
+}
+
 async function ownerSettings() {
   const [s, me] = await Promise.all([api('GET', '/api/owner/settings'), api('GET', '/api/me')]);
   const g = s.ground, rz = s.razorpay;
@@ -1403,7 +1531,8 @@ async function ownerSettings() {
       <div class="card"><div class="heading">Your booking link</div>
         <img src="${qrImg}" alt="QR code for ${link}" style="width:180px;margin:0 auto" loading="lazy">
         <div class="upi-box"><span class="small strong" style="overflow-wrap:anywhere">${link}</span><button class="link" data-act="copyLink">Copy</button></div>
-        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR to print</a><a class="btn soft" href="/${g.slug}" target="_blank">View page</a></div></div>
+        <a class="btn primary" href="/owner/posters" data-go="/owner/posters">${icon('image', 18)} Make a QR poster</a>
+        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR only</a><a class="btn soft" href="/${g.slug}" target="_blank">View page</a></div></div>
 
       <form class="card" data-form="prices"><div class="heading">Price per hour</div>
         <div class="price-table"><div></div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>
