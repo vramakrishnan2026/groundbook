@@ -1,13 +1,17 @@
 // Google sign-in linking, self-signup for new grounds, and the GoArena admin page.
 import { startSession } from '../lib/auth.js';
 import { googleEnabled, verifyGoogle } from '../lib/google.js';
+import { notifyAdmin } from '../lib/notify.js';
 import { HttpError, bad, cleanName, cleanPhone, cleanPin, cleanText, hashPin, json, readJson } from '../lib/util.js';
 
 export const RESERVED_SLUGS = ['g', 'b', 'api', 'login', 'owner', 'helper', 'img', 'vendor', 'fonts', 'posters', 'admin', 'www', 'app', 'static', 'signup', 'start', 'terms', 'privacy', 'refunds', 'contact', 'about', 'pricing'];
 const MAX_GROUNDS_PER_ACCOUNT = 3;
 
+// The GoArena team's WhatsApp number, shown to owners as "WhatsApp us".
+export const supportNumber = (env) => String(env.SUPPORT_WHATSAPP || '').replace(/\D/g, '') || null;
+
 export function config(env) {
-  return json({ googleClientId: googleEnabled(env) ? env.GOOGLE_CLIENT_ID : null });
+  return json({ googleClientId: googleEnabled(env) ? env.GOOGLE_CLIENT_ID : null, supportWhatsapp: supportNumber(env) });
 }
 
 // ---------- link / unlink Google on an existing owner or helper
@@ -78,5 +82,14 @@ export async function signup(env, request) {
   ).bind(gid, ownerName, phone, await hashPin(pin), now, who.sub, who.email));
   await db.batch(stmts);
   const staff = await db.prepare('SELECT id FROM staff WHERE ground_id = ? AND role = ?').bind(gid, 'owner').first();
+  const base = (env.PUBLIC_URL || new URL(request.url).origin).replace(/\/+$/, '');
+  await notifyAdmin(env, [
+    'New ground on GoArena, waiting for your approval',
+    `${groundName}${area ? ', ' + area : ''}`,
+    `Owner: ${ownerName}, ${phone}`,
+    `Google: ${who.email}`,
+    `${split ? 'Full ground and two halves' : 'One court'}`,
+    `Check and approve: ${base}/admin/g/${gid}`,
+  ].join('\n'), { groundId: gid });
   return json({ slug, role: 'owner' }, 201, { 'set-cookie': await startSession(db, request, staff.id) });
 }

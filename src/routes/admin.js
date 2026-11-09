@@ -5,6 +5,7 @@ import { insertBooking, unitsWithPrices } from '../lib/bookings.js';
 import { freeSlug } from './accounts.js';
 import { checkKeys, groundKeys, keyMode, listPayments, reconcile } from '../lib/razorpay.js';
 import { logError } from '../lib/tracking.js';
+import { alertsReady, notifyAdmin } from '../lib/notify.js';
 import { photoUrls } from './public.js';
 import { HttpError, addDays, bad, cleanPhone, cleanText, hashPin, isDate, json, localNow, readJson } from '../lib/util.js';
 
@@ -73,6 +74,7 @@ export async function overview(env, email) {
   ]);
   const months = Array.from({ length: 6 }, (_, i) => addMonths(sixMonthsAgo, i).slice(0, 7));
   return json({
+    alertsReady: alertsReady(env),
     email, today: t, grounds: all,
     income: months.map((m) => { const r = income.results.find((x) => x.month === m); return { month: m, total: r ? r.total : 0, count: r ? r.n : 0 }; }),
     payments: payments.results.map((p) => ({ groundId: p.ground_id, ground: p.ground, amount: p.amount, months: p.months, paidOn: p.paid_on, note: p.note })),
@@ -413,4 +415,13 @@ export async function duplicateAsDemo(env, email, id, request) {
   await log(db, email, gid, 'Demo ground created', `copy of ${src.name}`);
   await log(db, email, src.id, 'Duplicated as demo', `${name} (/${slug})`);
   return json({ id: gid, slug, name, phone, pin }, 201);
+}
+
+// Sends a test WhatsApp alert so the admin can see the setup works.
+export async function notifyTest(env, email) {
+  if (!alertsReady(env)) throw bad('WhatsApp alerts are not set up yet. Add the CALLMEBOT_KEY secret in Cloudflare first.', 'notify_off');
+  const ok = await notifyAdmin(env, `GoArena test alert. Sign-up alerts will come to this chat. (sent by ${email})`);
+  if (!ok) throw new HttpError(502, 'CallMeBot did not send it. See Errors on the admin page for the reason.', 'notify_failed');
+  await env.DB.prepare('INSERT INTO admin_log (ground_id, email, action, detail, at) VALUES (NULL, ?, ?, ?, ?)').bind(email, 'notify_test', '', Date.now()).run();
+  return json({ ok: true });
 }

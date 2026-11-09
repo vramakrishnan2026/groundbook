@@ -32,6 +32,7 @@ export async function me(env, me) {
       today: localNow(g.tz_offset_min).date,
     },
     googleClientId: env.GOOGLE_CLIENT_ID || null,
+    supportWhatsapp: String(env.SUPPORT_WHATSAPP || '').replace(/\D/g, '') || null,
   });
 }
 

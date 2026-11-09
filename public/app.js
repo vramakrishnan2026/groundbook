@@ -152,10 +152,16 @@ window.addEventListener('unhandledrejection', (e) => { if (!(e.reason instanceof
 // server has a Google client ID configured.
 let googleId;
 let gsiLoading;
+let appConfig;
+const getConfig = () => (appConfig ??= api('GET', '/api/config').catch(() => { appConfig = undefined; return {}; }));
 async function googleClientId() {
-  if (googleId === undefined) googleId = (await api('GET', '/api/config').catch(() => ({}))).googleClientId || null;
+  if (googleId === undefined) googleId = (await getConfig()).googleClientId || null;
   return googleId;
 }
+// "WhatsApp us": chat with the GoArena team (number comes from the server).
+const supportLink = (num, text) => `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+const supportBtn = (num, text, label = 'WhatsApp us', cls = 'btn secondary small') => (num
+  ? h`<a class="${cls}" href="${supportLink(num, text)}" target="_blank" rel="noopener">${icon('chat', 16)} ${label}</a>` : '');
 function loadGsi() {
   if (window.google?.accounts?.id) return Promise.resolve(true);
   gsiLoading = gsiLoading || new Promise((resolve) => {
@@ -698,12 +704,15 @@ function signupPage() {
         <div data-google class="col gap12"><div id="gbtn" class="gbtn"><p class="small muted center">Loading Google sign-in…</p></div></div>
         <div class="form-error banner red hidden" id="gerr" role="alert"></div>
         <p class="small muted center">Already set up? <a class="link" href="/login" data-go="/login" style="color:#4ade80">Log in</a></p>
+        <p class="small muted center" id="supportLine"></p>
       </div></div></div>`);
+    getConfig().then((c) => { const el = document.getElementById('supportLine'); if (el && c.supportWhatsapp) el.innerHTML = String(h`Questions first? <a class="link" style="color:#4ade80" href="${supportLink(c.supportWhatsapp, 'Hi GoArena, I have a question about listing my ground.')}" target="_blank" rel="noopener">WhatsApp us</a>`); });
     googleButton('gbtn', (c) => { credential = c; step2(); }, { text: 'signup_with', dark: true }).then((ok) => {
       if (!ok && document.getElementById('gbtn')) document.getElementById('gbtn').innerHTML = '<p class="small muted center">Sign-up opens soon. Ask GoArena to set up your ground.</p>';
     });
   };
   const step2 = () => {
+    getConfig().then((c) => { const el = document.getElementById('supportLine2'); if (el && c.supportWhatsapp) el.innerHTML = String(h`Stuck? <a class="link" href="${supportLink(c.supportWhatsapp, 'Hi GoArena, I need help signing up my ground.')}" target="_blank" rel="noopener">WhatsApp us</a>`); });
     render(h`<div class="screen">${topbar('Your ground', '/signup')}
       <form class="content" data-form="signup" novalidate>
         <div class="field"><label for="groundName">Ground name</label><input class="input" id="groundName" name="groundName" placeholder="e.g. Kick Off Arena" required></div>
@@ -719,6 +728,7 @@ function signupPage() {
           <p class="small muted">Lets you log in with phone + PIN if Google isn't available.</p></div>
         <div class="form-error banner red hidden" role="alert"></div>
         <button class="btn primary" type="submit">Create my ground</button>
+        <p class="small muted center" id="supportLine2"></p>
       </form></div>`, {
       forms: {
         signup: async (f) => {
@@ -812,6 +822,12 @@ async function adminPage() {
       <div class="row gap8"><input class="input search" type="search" id="adminSearch" placeholder="Search ground, owner, phone, email" aria-label="Search grounds">
         <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div></div>
     <p class="small muted">Visits and errors are counted by GoArena per ground. Site-wide traffic, countries and server logs: <a class="link" href="${CF_DASH}" target="_blank" rel="noopener">Cloudflare dashboard ↗</a> (Workers &amp; Pages → groundbook → Metrics / Logs).</p>
+    ${d.alertsReady
+      ? h`<div class="row between wrap gap8 small muted"><span>${icon('chat', 16)} New sign-ups are sent to your WhatsApp.</span><button class="btn soft small" data-act="notifyTest">Send a test alert</button></div>`
+      : h`<div class="banner amber">${icon('chat', 20)}<div><div class="strong">Turn on WhatsApp alerts for new sign-ups</div>
+        <div>1. Open <a class="link" href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">callmebot.com's WhatsApp page</a>, save the bot's number in the admin WhatsApp, and send it: <b>I allow callmebot to send me messages</b><br>
+        2. It replies with an API key. In Cloudflare: Workers → groundbook → Settings → Variables and secrets → Add, type <b>Secret</b>, name <b>CALLMEBOT_KEY</b>, paste the key, Deploy.<br>
+        3. Come back here and tap "Send a test alert".</div></div></div>`}
     <div class="stats admin-stats">
       <div class="card"><span class="small muted">Grounds</span><span class="title">${st.grounds}</span><span class="small muted">${st.waiting} waiting approval</span></div>
       <div class="card"><span class="small muted">Plan income / month</span><span class="title">${money(st.monthlyPlans)}</span><span class="small muted">${st.onPlan} on a plan · ${st.free} free</span></div>
@@ -861,6 +877,7 @@ async function adminPage() {
     </div>
   </div></div>`, {
     actions: {
+      notifyTest: async (el) => { el.disabled = true; try { await api('POST', '/api/admin/notify-test'); toast('Sent. Check your WhatsApp.'); } catch (e) { toast(e.message); } finally { el.disabled = false; } },
       refresh: () => route(),
       csv: () => downloadCsv(`goarena-grounds-${d.today}.csv`, [
         ['Ground', 'Link', 'Area', 'Owner', 'Phone', 'Email', 'Approved', 'Service', 'Plan', 'Price per month', 'Paid until', 'Visits 30d', 'Bookings 30d', 'Booked 30d', 'Payments to check', 'Last login', 'Photos', 'UPI', 'Razorpay', 'Helpers', 'Joined'],
@@ -1153,14 +1170,16 @@ const bookingRow = (b, { showAmount = false, act } = {}) => h`<div class="brow" 
   ${b.phone ? h`<a class="call" href="tel:+91${b.phone}" aria-label="Call ${b.name}">${icon('phone', 20)}</a>` : ''}</div>`;
 
 // What the owner sees about their GoArena service and subscription.
-function planBanner(g) {
+function planBanner(g, support) {
   if (g.service === 'paused') return h`<div class="banner red">${icon('x', 20)}<div><div class="strong">Online bookings are paused by GoArena</div>
-    <div>${g.serviceNote || 'Customers can only call you to book.'} Your existing bookings are safe. Contact GoArena to switch bookings back on.</div></div></div>`;
+    <div>${g.serviceNote || 'Customers can only call you to book.'} Your existing bookings are safe. Contact GoArena to switch bookings back on.</div>
+    <div style="margin-top:8px">${supportBtn(support, `Hi GoArena, online bookings are paused for ${g.name}. Can you help?`)}</div></div></div>`;
   if (!g.paidUntil || !g.approved) return '';
   const days = Math.round((asDate(g.paidUntil) - asDate(g.today)) / 86400000);
   if (days > 7) return '';
   return h`<div class="banner amber">${icon('clock', 20)}<div><div class="strong">${days < 0 ? 'GoArena plan overdue' : days === 0 ? 'GoArena plan due today' : `GoArena plan due in ${days} day${days > 1 ? 's' : ''}`}</div>
-    <div>${money(g.planAmount)} per month, paid until ${fmtDate(g.paidUntil)}. Please pay GoArena to keep online bookings running.</div></div></div>`;
+    <div>${money(g.planAmount)} per month, paid until ${fmtDate(g.paidUntil)}. Please pay GoArena to keep online bookings running.</div>
+    <div style="margin-top:8px">${supportBtn(support, `Hi GoArena, I'd like to pay the plan for ${g.name}.`, 'WhatsApp us to pay')}</div></div></div>`;
 }
 
 async function ownerToday() {
@@ -1173,9 +1192,10 @@ async function ownerToday() {
       <div class="stats">
         <div class="card"><span class="small muted">Bookings today</span><span class="title">${t.bookingsToday}</span></div>
         <div class="card"><span class="small muted">This week</span><span class="title">${money(t.weekTotal)}</span></div></div>
-      ${planBanner(me.ground)}
+      ${planBanner(me.ground, me.supportWhatsapp)}
       ${me.ground.approved ? '' : h`<div class="banner amber">${icon('clock', 20)}<div><div class="strong">Waiting for GoArena to switch on bookings</div>
-        <div>Customers can see your page but can't book yet. Meanwhile, in <a class="link" href="/owner/settings" data-go="/owner/settings">Settings</a>: ${[me.ground.upiSet ? null : 'add your UPI ID', 'check your prices', 'add photos'].filter(Boolean).join(', ')}.</div></div></div>`}
+        <div>We check new grounds and switch them on, usually within a day. Customers can see your page but can't book yet. Meanwhile, in <a class="link" href="/owner/settings" data-go="/owner/settings">Settings</a>: ${[me.ground.upiSet ? null : 'add your UPI ID', 'check your prices', 'add photos'].filter(Boolean).join(', ')}.</div>
+        <div style="margin-top:8px">${supportBtn(me.supportWhatsapp, `Hi GoArena, I've signed up ${me.ground.name}. Can you switch on bookings?`)}</div></div></div>`}
       ${(t.refunds || []).map((b) => { const amt = b.refund ? b.refund.amount : b.amount;
         const why = b.status === 'CANCELLED'
           ? (b.refund && b.refund.status === 'failed'

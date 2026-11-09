@@ -7,7 +7,7 @@ import { makeEnv, createServer } from '../scripts/dev-server.mjs';
 import { fakeGoogle } from './fake-google.mjs';
 
 const google = await fakeGoogle();
-const env = Object.assign(await makeEnv(), { GOOGLE_CLIENT_ID: google.clientId, GOOGLE_FETCH: google.fetch, ADMIN_EMAILS: 'boss@gmail.com' });
+const env = Object.assign(await makeEnv(), { GOOGLE_CLIENT_ID: google.clientId, GOOGLE_FETCH: google.fetch, ADMIN_EMAILS: 'boss@gmail.com', SUPPORT_WHATSAPP: '919886304904', ADMIN_WHATSAPP: '919886304904' });
 const server = createServer(env).listen(0);
 const base = `http://localhost:${server.address().port}`;
 const GSI = `window.google = { accounts: { id: {
