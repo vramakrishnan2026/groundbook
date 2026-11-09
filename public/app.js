@@ -318,7 +318,7 @@ const SAMPLE_PHOTOS = ['1513609698234-16d36e4b7a65', '1650327987377-90bf6c9789fd
 function landing() {
   render(h`<div class="screen">
     <div class="hero big" style="background-image:url(/img/stadium.jpg)"><div class="shade"></div>
-      <div class="over"><div class="brand">${icon('calendar', 18)} GoArena</div>
+      <div class="over"><img class="brand-mark" src="/brand/wordmark-on-dark.webp" alt="GoArena" width="220" height="51">
         <h1 class="hero-title">Book your game in a minute.</h1>
         <p class="hero-sub">Scan the ground's QR, pick a slot, pay by UPI. No app, no commission.</p></div></div>
     <div class="content sheet-up">
@@ -381,6 +381,7 @@ function customerHome(slug, data) {
       ${mine.length ? h`<div class="col gap12"><div class="section-title">Your bookings</div>${mine.map((b) => h`
         <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${hourLabel(b.hour)}</div>
         <div class="grow"><div class="strong">${fmtDate(b.date)}</div><div class="small muted">${b.unit} · ${b.ref}</div></div>${icon('right', 18)}</a>`)}</div>` : ''}
+      <a class="powered" href="/" data-go="/"><img src="/brand/ball-front.webp" alt="" width="18" height="18">Booking by <b>GoArena</b></a>
     </div>
     <div class="footer">${g.open ? h`<button class="btn primary" data-go="/${slug}?step=slots">Check free slots ${icon('right', 18)}</button>`
       : h`<div class="col gap8"><p class="small muted center">Online booking opens soon.</p>${g.whatsapp ? h`<a class="btn primary" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call to book</a>` : ''}</div>`}</div>
@@ -670,7 +671,7 @@ function loginPage() {
   render(h`<div class="screen dark">
     <form class="content" data-form="login" id="login-form" style="justify-content:center" novalidate>
       <div class="glass">
-      <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Log in</h1></div></div>
+      <img class="brand-mark" src="/brand/wordmark-on-dark.webp" alt="GoArena" width="220" height="51"><h1 class="display">Log in</h1>
       <p class="muted" style="margin-top:-8px">For ground owners and helpers.</p>
       <div class="col gap12 hidden" data-google><div id="gbtn" class="gbtn"></div>
         <div class="form-error banner red hidden" id="gerr" role="alert"></div>
@@ -701,7 +702,7 @@ function signupPage() {
   const step1 = () => {
     render(h`<div class="screen dark"><div class="content" style="justify-content:center">
       <div class="glass">
-        <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('calendar', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">List your ground</h1></div></div>
+        <img class="brand-mark" src="/brand/wordmark-on-dark.webp" alt="GoArena" width="220" height="51"><h1 class="display">List your ground</h1>
         <p class="muted" style="margin-top:-8px">Your own booking page. Customers pay you directly by UPI. No commission per booking.</p>
         <div class="feature-list">${[['user', 'Sign in with Google', 'No new password. Your phone already has a Gmail account.'], ['settings', 'Add prices, photos and UPI ID', 'Takes about five minutes.'], ['check', 'We switch on bookings', 'GoArena checks new grounds, usually within a day.']]
           .map(([ic, t, d]) => h`<div class="feature"><div class="circle soft">${icon(ic, 20)}</div><div><div class="strong">${t}</div><div class="small muted">${d}</div></div></div>`)}</div>
@@ -767,7 +768,7 @@ const statusPills = (g) => h`<div class="chips">
 
 async function adminLogin() {
   render(h`<div class="screen dark"><div class="content" style="justify-content:center"><div class="glass">
-    <div class="row gap12"><div class="circle primary" style="width:52px;height:52px">${icon('lock', 26)}</div><div class="col" style="gap:0"><span class="caption muted">GOARENA</span><h1 class="display">Admin</h1></div></div>
+    <img class="brand-mark" src="/brand/wordmark-on-dark.webp" alt="GoArena" width="220" height="51"><h1 class="display">Admin</h1>
     <p class="muted" style="margin-top:-8px">Sign in with the Gmail listed as a GoArena admin.</p>
     <div data-google><div id="gbtn" class="gbtn"><p class="small muted center">Loading Google sign-in…</p></div></div>
     <div class="form-error banner red hidden" id="gerr" role="alert"></div></div></div></div>`);
@@ -1162,7 +1163,7 @@ async function logout() {
 }
 
 // ---------------------------------------------------------------- owner
-const ownerNav = (active, pending = 0) => h`<nav class="nav">
+const ownerNav = (active, pending = 0) => h`<nav class="nav"><img class="nav-logo" src="/brand/wordmark-on-light.webp" alt="GoArena" width="180" height="42">
   <a href="/owner" data-go="/owner" class="${active === 'today' ? 'on' : ''}">${icon('home', 22)}<span>Today ${pending ? h`<span class="badge">${pending}</span>` : ''}</span></a>
   <a href="/owner/calendar" data-go="/owner/calendar" class="${active === 'cal' ? 'on' : ''}">${icon('calendar', 22)}<span>Calendar</span></a>
   <a href="/owner/settings" data-go="/owner/settings" class="${active === 'set' ? 'on' : ''}">${icon('settings', 22)}<span>Settings</span></a></nav>`;
@@ -1740,4 +1741,35 @@ async function helperPage() {
   every(60000, () => { if (!document.querySelector('#glink iframe')) route(); });
 }
 
+// ---------------------------------------------------------------- opening animation
+// The flaming ball circles "GoArena" and lands as the "o". Once per visit, only on GoArena's own
+// pages (never on a ground's booking page), skipped for reduced motion, a tap skips it.
+function splash() {
+  const p = location.pathname;
+  const ours = p === '/' || /^\/(login|signup|owner|helper|admin)(\/|$)/.test(p);
+  const force = new URLSearchParams(location.search).has('splash');           // for checking it by hand
+  if (!force && (!ours || navigator.webdriver || sessionStorage.getItem('gb_splash') || matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+  sessionStorage.setItem('gb_splash', '1');
+  const el = document.createElement('div'); el.className = 'splash'; document.body.appendChild(el);
+  const W = Math.min(innerWidth, 900), H = innerHeight, SPEED = 1.75;
+  const stage = document.createElement('div'); Object.assign(stage.style, { position: 'absolute', left: ((innerWidth - W) / 2) + 'px', top: 0, width: W + 'px', height: H + 'px' });
+  el.appendChild(stage);
+  let done = false;
+  const finish = () => { if (done) return; done = true; el.classList.add('out'); setTimeout(() => el.remove(), 350); };
+  el.addEventListener('click', finish);
+  setTimeout(finish, 3200); // never hold the app up, whatever happens
+  const s = document.createElement('script'); s.src = '/brand/sting.js';
+  s.onload = async () => {
+    try {
+      await Promise.race([document.fonts.load('900 italic 40px GoArenaLetters'), new Promise((r) => setTimeout(r, 600))]);
+      const st = window.makeSting(stage, { mode: 'word', width: W, height: H, size: Math.round(Math.min(W * .15, 112)), pad: .3 });
+      const t0 = performance.now();
+      const tick = (now) => { if (done) return; const t = (now - t0) / 1000 * SPEED; st.frame(t); if (t < 3.3) requestAnimationFrame(tick); else finish(); };
+      requestAnimationFrame(tick);
+    } catch { finish(); }
+  };
+  s.onerror = finish;
+  document.head.appendChild(s);
+}
+splash();
 route();
