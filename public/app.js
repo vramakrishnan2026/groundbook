@@ -428,6 +428,12 @@ async function customerSlots(slug, data, q) {
   const url = (p) => `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, ...p })}`;
   const W = step === 60 ? 56 : 32; // block width in px; an hour is always about 56–64px
   const firstHourAt = (b) => b.start % 60 === 0;
+  // Each free stretch is drawn as its own little pitch; booked time is a gap between them.
+  const runEdges = (i) => {
+    const me = visible[i].state === 'free', prev = visible[i - 1], next = visible[i + 1];
+    const sameAs = (x) => x && (x.state === 'free') === me;
+    return [me ? 'run' : 'gap', sameAs(prev) ? '' : 'edge-l', sameAs(next) ? '' : 'edge-r'].join(' ');
+  };
 
   render(h`<div class="screen" ${photoBg(groundPhoto(slug))}>
     ${topbar('Pick a time', `/${slug}`)}
@@ -440,7 +446,7 @@ async function customerSlots(slug, data, q) {
         ${visible.length ? h`
         <div class="tbar-wrap" id="tbar"><div class="tbar" style="--w:${W}px">
           <div class="tbar-labels">${visible.map((b) => h`<span>${firstHourAt(b) ? minLabel(b.start).replace(' ', ' ') : ''}</span>`)}</div>
-          <div class="tbar-cells">${visible.map((b) => h`<button class="tb ${b.state}" data-act="pick" data-start="${b.start}" ${b.state !== 'free' ? raw('disabled') : ''} aria-label="${minLabel(b.start)} ${b.state === 'free' ? 'free' : 'booked'}"></button>`)}</div>
+          <div class="tbar-cells">${visible.map((b, i) => h`<button class="tb ${b.state} ${runEdges(i)}" data-act="pick" data-start="${b.start}" ${b.state !== 'free' ? raw('disabled') : ''} aria-label="${minLabel(b.start)} ${b.state === 'free' ? 'free' : 'booked'}"></button>`)}</div>
         </div></div>
         <div class="legend"><span><i class="lg-free"></i>Free</span><span><i class="lg-sel"></i>Your booking</span><span><i class="lg-taken"></i>Booked</span></div>
         <div class="dur ${start === null ? 'hidden' : ''}" id="dur">
