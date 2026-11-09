@@ -388,7 +388,7 @@ function customerHome(slug, data) {
       ${mine.length ? h`<div class="col gap12"><div class="section-title">Your bookings</div>${mine.map((b) => h`
         <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${minLabel(startOf(b))}</div>
         <div class="grow"><div class="strong">${fmtDate(b.date)}</div><div class="small muted">${b.unit} · ${b.ref}</div></div>${icon('right', 18)}</a>`)}</div>` : ''}
-      <a class="powered" href="/" data-go="/"><img src="/brand/ball-front.webp" alt="" width="18" height="18">Booking by <b>GoArena</b></a>
+      <a class="powered" href="/" data-go="/" aria-label="Booking by GoArena">Booking by <img src="/brand/wordmark-on-light.webp" alt="GoArena" width="104" height="24"></a>
     </div>
     <div class="footer">${g.open ? h`<button class="btn primary" data-go="/${slug}?step=slots">Check free slots ${icon('right', 18)}</button>`
       : h`<div class="col gap8"><p class="small muted center">Online booking opens soon.</p>${g.whatsapp ? h`<a class="btn primary" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call to book</a>` : ''}</div>`}</div>
