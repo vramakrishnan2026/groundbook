@@ -31,7 +31,7 @@ book.goarena.in and its bookings are never touched. All set up in the Cloudflare
      npx wrangler d1 migrations apply groundbook-sandbox --env sandbox --remote && npx wrangler d1 execute groundbook-sandbox --env sandbox --remote --file scripts/sandbox-seed.sql && npx wrangler deploy --env sandbox
      ```
 3. Open `https://groundbook-sandbox.<your-subdomain>.workers.dev/sandbox`. The test ground has football,
-   box cricket and 3 badminton courts. Owner login at `/login`: phone 9847012345, PIN 1234
+   box cricket and 3 badminton courts. Owner login at `/login`: phone 9847012345 or 8884265999, PIN 1234
    (Google login is off in the sandbox).
 
 Every push to `multi-sport` redeploys the sandbox. `scripts/sandbox-seed.sql` only adds the test

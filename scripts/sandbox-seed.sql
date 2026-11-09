@@ -1,5 +1,5 @@
 -- Sandbox test ground (sandbox Worker only, never production). Safe to run on every deploy:
--- everything is INSERT OR IGNORE. Owner login: phone 9847012345, PIN 1234.
+-- everything is INSERT OR IGNORE. Owner logins: phone 9847012345 or 8884265999, PIN 1234.
 INSERT OR IGNORE INTO grounds (slug, name, area, maps_url, upi_id, upi_name, whatsapp, facilities, open_hour, close_hour, created_at)
    VALUES ('sandbox', 'GoArena Sandbox', 'Bangalore', '', 'sandbox@ybl', 'GoArena Sandbox',
            '9847012345', '["Floodlights","Parking","Indoor badminton hall"]',
@@ -14,6 +14,8 @@ INSERT OR IGNORE INTO prices (unit_id, day_type, amount) SELECT id, 'weekend', 9
 INSERT OR IGNORE INTO prices (unit_id, day_type, amount) SELECT id, 'weekday', 700 FROM units WHERE ground_id = (SELECT id FROM grounds WHERE slug = 'sandbox') AND code = 'HALF_B';
 INSERT OR IGNORE INTO prices (unit_id, day_type, amount) SELECT id, 'weekend', 900 FROM units WHERE ground_id = (SELECT id FROM grounds WHERE slug = 'sandbox') AND code = 'HALF_B';
 INSERT OR IGNORE INTO staff (ground_id, role, name, phone, pin_hash, created_at) VALUES ((SELECT id FROM grounds WHERE slug = 'sandbox'), 'owner', 'Test Owner', '9847012345', 'pbkdf2$100000$rbQGOOn/5NKNIxP0jXA/VQ==$0cJ8ZN1PmyuHSU7MXDQm4VhdN0SeEwRuT2jFtnbGx6k=', 1794224765323);
+
+INSERT OR IGNORE INTO staff (ground_id, role, name, phone, pin_hash, created_at) VALUES ((SELECT id FROM grounds WHERE slug = 'sandbox'), 'owner', 'Owner 2', '8884265999', 'pbkdf2$100000$MUfAMAflFZ85397Nu4yLQw==$3lo3mmemtRfQPE7N4KbkadKk5omJMdEClZ+4zl8/y78=', 1794224748135);
 
 -- Multi-sport: box cricket on the same turf (same cells), 3 indoor badminton courts.
 INSERT OR IGNORE INTO units (ground_id, code, name, subtitle, mask, sort, sport) VALUES ((SELECT id FROM grounds WHERE slug = 'sandbox'), 'CR_FULL', 'Full ground', 'Full turf', 3, 0, 'cricket');
