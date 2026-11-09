@@ -377,3 +377,22 @@ form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
 .poster-photo.on { border-color: var(--primary); }
 .poster-photo.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1.5px dashed var(--border); }
 .poster-preview { width: min(100%, 360px); margin: 0 auto; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); background: var(--surface); display: flex; align-items: center; justify-content: center; }
+
+/* Owner area: phone layout by default; a dashboard with a sidebar on wide screens */
+.dash, .dash-col { display: flex; flex-direction: column; gap: 20px; }
+@media (min-width: 1000px) {
+  .screen.owner { max-width: 1360px; padding-left: 236px; box-sizing: border-box; }
+  .screen.owner::before, .screen.owner::after { max-width: none; }
+  .screen.owner .content { padding: 28px 36px 48px; }
+  .screen.owner .nav { position: fixed; top: 0; bottom: 0; left: max(0px, calc(50% - 680px)); width: 220px; flex-direction: column; justify-content: flex-start; gap: 6px;
+    padding: 28px 14px; border-top: 0; border-right: 1px solid var(--border); background: rgba(255,255,255,.94); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  .screen.owner .nav::before { content: 'GoArena'; font-weight: 900; font-style: italic; font-size: 26px; letter-spacing: -.5px; padding: 0 12px 22px; color: var(--text); }
+  .screen.owner .nav a { flex-direction: row; justify-content: flex-start; font-size: 15px; gap: 12px; padding: 12px 14px; border-radius: 12px; min-width: 0; }
+  .screen.owner .nav a:hover { background: var(--surface); }
+  .screen.owner .nav a.on { background: var(--primary-soft); }
+  .owner-today .dash { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 32px; align-items: start; }
+  .owner-set .content { display: block; column-count: 2; column-gap: 28px; }
+  .owner-set .content > * { break-inside: avoid; margin: 0 0 24px; }
+  .owner-set .content > h1 { column-span: all; }
+}
+@media (min-width: 1500px) { .owner-set .content { column-count: 3; } }

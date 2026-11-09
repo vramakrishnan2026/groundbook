@@ -1185,10 +1185,11 @@ function planBanner(g, support) {
 async function ownerToday() {
   const [t, me] = await Promise.all([api('GET', '/api/owner/today'), api('GET', '/api/me')]);
   document.title = `${me.ground.name} · Today`;
-  render(h`<div class="screen">
+  render(h`<div class="screen owner owner-today">
     <div class="content" style="padding-top:20px">
       <div class="row between top"><div class="col"><span class="eyebrow">${fmtDate(t.date)} · ${me.ground.name}</span><h1 class="display">Today</h1></div>
         <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div>
+      <div class="dash"><div class="dash-col">
       <div class="stats">
         <div class="card"><span class="small muted">Bookings today</span><span class="title">${t.bookingsToday}</span></div>
         <div class="card"><span class="small muted">This week</span><span class="title">${money(t.weekTotal)}</span></div></div>
@@ -1211,8 +1212,10 @@ async function ownerToday() {
           <div class="grow"><div class="strong">Check payment · ${money(b.amount)}</div><div class="small amber">${b.name} · ${dayShort(b.date)} ${dayNum(b.date)} · ${hourLabel(b.hour)} · ${b.unit.name}</div></div>
           <span class="btn small" style="background:var(--amber);color:#fff;min-height:36px">Review</span></div>`)}</div>`
         : h`<div class="banner green">${icon('check', 20)}<div>No payments waiting for you.</div></div>`}
+      </div><div class="dash-col">
       <div class="col gap12"><div class="row between"><div class="heading">Today's bookings</div><button class="link" data-go="/owner/calendar">See calendar</button></div>
         ${t.today.length ? h`<div class="list">${t.today.map((b) => bookingRow(b, { showAmount: true }))}</div>` : h`<div class="empty">No confirmed bookings today yet.</div>`}</div>
+      </div></div>
     </div>${ownerNav('today', t.pending.length)}</div>`, {
     actions: {
       refresh: () => route(),
@@ -1321,7 +1324,7 @@ async function ownerCalendar() {
     }
     return out;
   });
-  render(h`<div class="screen">
+  render(h`<div class="screen owner owner-cal">
     <div class="content tight" style="padding-top:20px">
       <div class="row between"><h1 class="display">Calendar</h1><span class="small muted">${fmtDate(d.date)}</span></div>
       <div class="dates">${d.dates.map((x) => h`<button class="date ${x.date === d.date ? 'on' : ''} ${x.date === d.today ? 'today' : ''}" data-act="date" data-date="${x.date}"><span class="d">${x.date === d.today ? 'Today' : dayShort(x.date)}</span><span class="n">${dayNum(x.date)}</span></button>`)}</div>
@@ -1544,7 +1547,7 @@ async function ownerSettings() {
   const link = `${s.publicUrl || location.origin}/${g.slug}`;
   const qrImg = qrPng(link, 12, 4);
   const hours = Array.from({ length: 25 }, (_, i) => i);
-  render(h`<div class="screen">
+  render(h`<div class="screen owner owner-set">
     <div class="content tight" style="padding-top:20px">
       <h1 class="display">Settings</h1>
 
