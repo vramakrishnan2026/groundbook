@@ -44,3 +44,25 @@ ADMIN_WHATSAPP = "919886304904"
 
 [observability]
 enabled = true
+
+# ---------------------------------------------------------------------------------------------
+# Sandbox: a separate Worker + separate database for trying new features (multi-sport).
+# Nothing here touches book.goarena.in or its bookings. See docs/multi-sport.md.
+[env.sandbox]
+name = "groundbook-sandbox"
+workers_dev = true
+routes = []
+triggers = { crons = ["*/5 * * * *"] }
+
+[[env.sandbox.d1_databases]]
+binding = "DB"
+database_name = "groundbook-sandbox"
+database_id = "PASTE-SANDBOX-DATABASE-ID-HERE"
+migrations_dir = "migrations"
+
+[env.sandbox.vars]
+PUBLIC_URL = ""
+GOOGLE_CLIENT_ID = ""
+ADMIN_EMAILS = "goarena2026@gmail.com"
+SUPPORT_WHATSAPP = "919886304904"
+ADMIN_WHATSAPP = ""

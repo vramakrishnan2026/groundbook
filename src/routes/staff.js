@@ -1,5 +1,6 @@
 // Owner and helper API. Every handler receives the logged-in staff member `me`.
 import {
+  ACTIVE, BADMINTON_FIRST_BIT, MAX_BADMINTON_COURTS,
   STEPS, checkSpan, closeBooking, groundById, hoursOf, insertBooking, priceForDur, publicBooking, sweepExpired,
   timeLabelOf, unitsWithPrices, startOf,
 } from '../lib/bookings.js';
@@ -169,9 +170,10 @@ export async function calendar(env, me, url) {
   const allMask = units.reduce((m, u) => m | u.mask, 0);
   const cells = [];
   for (let b = 0; b < 16; b++) if (allMask & (1 << b)) cells.push(1 << b);
+  // A turf cell is named after its football unit (Half A); box cricket shares the same cells.
   const columns = cells.map((cell) => {
-    const u = units.find((x) => x.mask === cell);
-    return { cell, name: u ? u.name : `Pitch ${cells.indexOf(cell) + 1}` };
+    const u = units.find((x) => x.mask === cell && x.sport !== 'cricket') || units.find((x) => x.mask === cell);
+    return { cell, name: u ? u.name : `Pitch ${cells.indexOf(cell) + 1}`, sport: u && u.sport === 'badminton' ? 'badminton' : 'turf' };
   });
   const dates = Array.from({ length: 21 }, (_, i) => addDays(today, i - 3));
   return json({
@@ -184,7 +186,7 @@ export async function calendar(env, me, url) {
     close: g.close_hour * 60,
     dates: dates.map((d) => ({ date: d, dayType: dayType(d) })),
     columns,
-    units: units.map(({ id, name, subtitle, mask }) => ({ id, name, subtitle, mask })),
+    units: units.map(({ id, name, label, subtitle, mask, sport }) => ({ id, name: label, shortName: name, subtitle, mask, sport })),
     hours: hoursOf(g).map((h) => ({ hour: h, label: hourLabel(h) })),
     bookings: results.map((b) => ({ ...ownerView(b, units), mask: b.mask })),
   });
@@ -227,6 +229,76 @@ export async function addSlot(env, me, request) {
   return getOne(env, me, row.id);
 }
 
+// ---------- owner: Sports ----------
+// Box cricket reuses the football turf: one cricket unit per football unit, same cells, own prices.
+// Badminton courts are separate indoor courts, each with its own cell.
+const CRICKET_SUB = { FULL: 'Full turf', HALF_A: 'Half turf', HALF_B: 'Half turf' };
+const BADMINTON_PRICE = { weekday: 400, weekend: 500 };
+
+export async function saveSports(env, me, request) {
+  const db = env.DB;
+  const body = await readJson(request);
+  const g = await groundById(db, me.ground_id);
+  const { results: all } = await db.prepare(
+    `SELECT u.*, (SELECT amount FROM prices p WHERE p.unit_id = u.id AND p.day_type = 'weekday') AS weekday,
+            (SELECT amount FROM prices p WHERE p.unit_id = u.id AND p.day_type = 'weekend') AS weekend
+       FROM units u WHERE u.ground_id = ?`
+  ).bind(g.id).all();
+  const today = localNow(g.tz_offset_min).date;
+  const stmts = [];
+  const turnOff = async (units, what) => {
+    const live = units.filter((u) => u.active);
+    if (!live.length) return;
+    const ids = live.map((u) => u.id);
+    const row = await db.prepare(
+      `SELECT COUNT(*) AS n FROM bookings WHERE unit_id IN (${ids.map(() => '?').join(',')})
+         AND status IN (${ACTIVE.map(() => '?').join(',')}) AND date >= ?`
+    ).bind(...ids, ...ACTIVE, today).first();
+    if (row.n > 0) throw bad(`${what} has ${row.n} upcoming booking${row.n > 1 ? 's' : ''}. Cancel or move ${row.n > 1 ? 'them' : 'it'} first.`, 'sports');
+    for (const u of live) stmts.push(db.prepare('UPDATE units SET active = 0 WHERE id = ?').bind(u.id));
+  };
+  const turnOn = (code, unit, prices) => {
+    const old = all.find((u) => u.code === code);
+    if (old) {
+      if (!old.active) stmts.push(db.prepare('UPDATE units SET active = 1 WHERE id = ?').bind(old.id));
+      return;
+    }
+    stmts.push(db.prepare('INSERT INTO units (ground_id, code, name, subtitle, mask, sort, sport) VALUES (?,?,?,?,?,?,?)')
+      .bind(g.id, code, unit.name, unit.subtitle, unit.mask, unit.sort, unit.sport));
+    for (const dt of ['weekday', 'weekend']) {
+      stmts.push(db.prepare(`INSERT INTO prices (unit_id, day_type, amount) SELECT id, ?, ? FROM units WHERE ground_id = ? AND code = ?`)
+        .bind(dt, prices[dt] ?? 0, g.id, code));
+    }
+  };
+
+  if (body.cricket !== undefined) {
+    const cricket = all.filter((u) => u.sport === 'cricket');
+    if (body.cricket) {
+      const turf = all.filter((u) => u.sport === 'football' && u.active);
+      if (!turf.length) throw bad('Box cricket needs the football turf', 'sports');
+      for (const f of turf) {
+        turnOn(`CR_${f.code}`, { name: f.name, subtitle: CRICKET_SUB[f.code] || '', mask: f.mask, sort: f.sort, sport: 'cricket' }, f);
+      }
+    } else await turnOff(cricket, 'Box cricket');
+  }
+
+  if (body.badmintonCourts !== undefined) {
+    const n = int(body.badmintonCourts, 'badminton courts');
+    if (n < 0 || n > MAX_BADMINTON_COURTS) throw bad(`Badminton courts must be between 0 and ${MAX_BADMINTON_COURTS}`, 'sports');
+    const extra = [];
+    for (let i = 1; i <= MAX_BADMINTON_COURTS; i++) {
+      const code = `BAD_${i}`;
+      const u = all.find((x) => x.code === code);
+      if (i <= n) turnOn(code, { name: `Court ${i}`, subtitle: 'Indoor', mask: 1 << (BADMINTON_FIRST_BIT + i - 1), sort: i, sport: 'badminton' }, BADMINTON_PRICE);
+      else if (u) extra.push(u);
+    }
+    await turnOff(extra, extra.length > 1 ? 'Those badminton courts' : `Badminton ${extra[0]?.name || 'court'}`);
+  }
+
+  if (stmts.length) await db.batch(stmts);
+  return getSettings(env, me);
+}
+
 // ---------- owner: Settings ----------
 export async function getSettings(env, me) {
   const db = env.DB;
@@ -245,7 +317,12 @@ export async function getSettings(env, me) {
       bookingDays: g.booking_days,
       stepMin: g.step_min || 60,
     },
-    units: units.map(({ id, name, subtitle, weekday, weekend }) => ({ id, name, subtitle, weekday, weekend })),
+    units: units.map(({ id, name, subtitle, sport, sportName, weekday, weekend }) => ({ id, name, subtitle, sport, sportName, weekday, weekend })),
+    sports: {
+      cricket: units.some((u) => u.sport === 'cricket'),
+      badmintonCourts: units.filter((u) => u.sport === 'badminton').length,
+      maxBadmintonCourts: MAX_BADMINTON_COURTS,
+    },
     photos: await photoUrls(db, g.id),
     helpers,
     publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
@@ -463,7 +540,7 @@ export async function upcoming(env, me) {
       return {
         ref: b.ref, date: b.date, hour: Math.floor(startOf(b) / 60), start: startOf(b),
         timeLabel: timeLabelOf(b),
-        unit: u ? u.name : '', name: b.customer_name, phone: b.phone, walkin: b.kind === 'walkin',
+        unit: u ? u.label : '', name: b.customer_name, phone: b.phone, walkin: b.kind === 'walkin',
       };
     }),
   });

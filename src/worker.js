@@ -90,6 +90,7 @@ const routes = [
   ['POST', '/api/owner/slots', staff(['owner'], (env, me, req) => st.addSlot(env, me, req))],
   ['GET', '/api/owner/settings', staff(['owner'], (env, me) => st.getSettings(env, me))],
   ['PUT', '/api/owner/settings', staff(['owner'], (env, me, req) => st.saveSettings(env, me, req))],
+  ['PUT', '/api/owner/sports', staff(['owner'], (env, me, req) => st.saveSports(env, me, req))],
   ['POST', '/api/owner/photos', staff(['owner'], (env, me, req) => st.addPhoto(env, me, req))],
   ['DELETE', '/api/owner/photos/:id', staff(['owner'], (env, me, req, url, p) => st.deletePhoto(env, me, p.id))],
   ['PUT', '/api/owner/upi-qr', staff(['owner'], (env, me, req) => st.setQr(env, me, req))],

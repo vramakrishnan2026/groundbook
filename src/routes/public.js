@@ -1,7 +1,7 @@
 // Customer-facing API: no login. A booking is reached through its secret token.
 import {
   ACTIVE, MAX_DUR, MIN_DUR, availability, bookableDates, checkSpan, closeBooking, groundById, groundBySlug,
-  insertBooking, isPastStart, priceFor, priceForDur, publicBooking, sweepExpired, unitsWithPrices,
+  insertBooking, isPastStart, priceFor, priceForDur, publicBooking, sportsOf, sweepExpired, unitsWithPrices,
 } from '../lib/bookings.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { createOrder, groundKeys, markPaidOnline, paidPayment, reconcile, signatureOk } from '../lib/razorpay.js';
@@ -50,7 +50,8 @@ export async function getGround(env, slug) {
   return json({
     ground: groundPublic(g),
     photos: await photoUrls(env.DB, g.id),
-    units: units.map(({ id, code, name, subtitle, weekday, weekend }) => ({ id, code, name, subtitle, weekday, weekend })),
+    units: units.map(({ id, code, name, subtitle, sport, weekday, weekend }) => ({ id, code, name, subtitle, sport, weekday, weekend })),
+    sports: sportsOf(units),
     dates,
   });
 }
@@ -169,7 +170,7 @@ export async function razorpayOrder(env, token) {
     amount: b.amount * 100,
     currency: 'INR',
     name: g.name,
-    description: `${u ? u.name : 'Booking'} · ${b.date} · ${b.ref}`,
+    description: `${u ? u.label : 'Booking'} · ${b.date} · ${b.ref}`,
     prefill: { name: b.customer_name, contact: b.phone ? '+91' + b.phone : '' },
   });
 }

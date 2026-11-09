@@ -96,7 +96,7 @@ export async function detail(env, id) {
     db.prepare(`SELECT id, role, name, phone, google_email, last_login_at, active FROM staff WHERE ground_id = ? AND active = 1 ORDER BY role = 'owner' DESC, id`).bind(g.id).all(),
     db.prepare('SELECT * FROM sub_payments WHERE ground_id = ? ORDER BY id DESC LIMIT 24').bind(g.id).all(),
     db.prepare('SELECT * FROM admin_log WHERE ground_id = ? ORDER BY id DESC LIMIT 30').bind(g.id).all(),
-    db.prepare(`SELECT b.ref, b.date, b.start_hour, b.start_min, b.status, b.kind, b.customer_name, b.amount, b.paid_via, u.name AS unit
+    db.prepare(`SELECT b.ref, b.date, b.start_hour, b.start_min, b.status, b.kind, b.customer_name, b.amount, b.paid_via, CASE u.sport WHEN 'cricket' THEN 'Box cricket · ' || u.name WHEN 'badminton' THEN 'Badminton · ' || u.name ELSE u.name END AS unit
                   FROM bookings b JOIN units u ON u.id = b.unit_id WHERE b.ground_id = ? AND b.kind <> 'block' ORDER BY b.id DESC LIMIT 15`).bind(g.id).all(),
     db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM bookings WHERE ground_id = ? AND status = 'CONFIRMED' AND kind <> 'block' AND date >= ?`).bind(g.id, addDays(t, -30)).first(),
   ]);
@@ -134,7 +134,7 @@ export async function detail(env, id) {
     setup: {
       openHour: g.open_hour, closeHour: g.close_hour, holdMinutes: g.hold_minutes, bookingDays: g.booking_days, mapsUrl: g.maps_url, about: g.about,
       facilities: JSON.parse(g.facilities || '[]'), upiId: g.upi_id, upiName: g.upi_name, upiQr: !!g.upi_qr_key, whatsapp: g.whatsapp,
-      units: units.map((u) => ({ name: u.name, subtitle: u.subtitle, weekday: u.weekday, weekend: u.weekend })),
+      units: units.map((u) => ({ name: u.label, subtitle: u.subtitle, weekday: u.weekday, weekend: u.weekend })),
       photos: photoList.map((p) => p.url),
     },
     razorpay: {
@@ -380,7 +380,7 @@ export async function duplicateAsDemo(env, email, id, request) {
   const gid = r.meta.last_row_id;
 
   const stmts = [
-    db.prepare('INSERT INTO units (ground_id, code, name, subtitle, mask, sort, active) SELECT ?, code, name, subtitle, mask, sort, active FROM units WHERE ground_id = ?').bind(gid, src.id),
+    db.prepare('INSERT INTO units (ground_id, code, name, subtitle, mask, sort, active, sport) SELECT ?, code, name, subtitle, mask, sort, active, sport FROM units WHERE ground_id = ?').bind(gid, src.id),
     db.prepare(`INSERT INTO prices (unit_id, day_type, amount) SELECT nu.id, p.day_type, p.amount FROM prices p
                   JOIN units ou ON ou.id = p.unit_id AND ou.ground_id = ? JOIN units nu ON nu.ground_id = ? AND nu.code = ou.code`).bind(src.id, gid),
     db.prepare(`INSERT INTO staff (ground_id, role, name, phone, pin_hash, created_at) VALUES (?, 'owner', 'Demo Owner', ?, ?, ?)`).bind(gid, phone, await hashPin(pin), now),

@@ -29,6 +29,7 @@ const ICONS = {
   right: '<path d="m9 18 6-6-6-6"/>',
   rupee: '<path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3a5 5 0 0 0 0-10"/>',
   wallet: '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  ball: '<circle cx="12" cy="12" r="10"/><path d="m12 7 4.3 3.1-1.7 5H9.4l-1.7-5z"/><path d="M12 2v5M21.5 9l-5.2 1.1M18 20l-3.4-4.9M6 20l3.4-4.9M2.5 9l5.2 1.1"/>',
   zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
   share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>',
   pin: '<path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
@@ -352,7 +353,9 @@ async function customer(slug) {
 function customerHome(slug, data) {
   const g = data.ground;
   const mine = store.get('gb_bookings', []).filter((b) => b.slug === slug && b.date >= data.dates[0].date);
-  const halves = data.units.length > 1;
+  const sports = data.sports && data.sports.length ? data.sports : [{ id: 'football', name: 'Football' }];
+  const multi = sports.length > 1;
+  const halves = data.units.some((u) => u.sport !== 'badminton' && u.code.includes('HALF'));
   const sample = !data.photos.length;
   const photos = sample ? SAMPLE_PHOTOS : data.photos.map((p) => p.url);
   const from = Math.min(...data.units.map((u) => Math.min(u.weekday, u.weekend)));
@@ -375,14 +378,22 @@ function customerHome(slug, data) {
         <div class="col" style="gap:0"><span class="caption muted">FROM</span><span class="price">${money(from)}<span class="small muted" style="font-weight:600"> / hour</span></span></div>
         ${g.mapsUrl ? h`<a class="btn small secondary" href="${g.mapsUrl}" target="_blank" rel="noopener">${icon('pin', 16)} Directions</a>` : ''}
       </div>
+      ${multi ? h`<div class="chips">${sports.map((sp) => h`<span class="chip sport">${sp.name}</span>`)}</div>` : ''}
       ${g.facilities.length ? h`<div class="chips">${g.facilities.map((f) => h`<span class="chip">${icon('check', 14)} ${f}</span>`)}</div>` : ''}
       <div class="col gap12">
         <div class="section-title">Prices per hour</div>
-        <div class="tiles">${data.units.map((u) => h`<div class="tile">
-          <div class="strong">${u.name}</div>${u.subtitle ? h`<div class="small muted">${u.subtitle}</div>` : ''}
-          <div class="tile-price">${money(u.weekday)}<span> Mon–Fri</span></div>
-          <div class="small muted">${money(u.weekend)} Sat–Sun</div></div>`)}</div>
-        ${halves ? h`<p class="small muted">Book the full ground for 8-a-side, or one half for 5-a-side. Another team can book the other half.</p>` : ''}
+        ${sports.map((sp) => {
+          const list = data.units.filter((u) => (u.sport || 'football') === sp.id);
+          const hint = sp.id === 'football' && halves ? 'Book the full ground for 8-a-side, or one half for 5-a-side. Another team can book the other half.'
+            : sp.id === 'cricket' ? 'Box cricket is played on the same turf, so it shares slots with football.'
+            : sp.id === 'badminton' && list.length > 1 ? `${list.length} indoor courts, booked separately.` : '';
+          return h`${multi ? h`<div class="heading">${sp.name}</div>` : ''}
+          <div class="tiles">${list.map((u) => h`<div class="tile">
+            <div class="strong">${u.name}</div>${u.subtitle ? h`<div class="small muted">${u.subtitle}</div>` : ''}
+            <div class="tile-price">${money(u.weekday)}<span> Mon–Fri</span></div>
+            <div class="small muted">${money(u.weekend)} Sat–Sun</div></div>`)}</div>
+          ${hint ? h`<p class="small muted">${hint}</p>` : ''}`;
+        })}
       </div>
       ${g.about ? h`<div class="col gap12"><div class="section-title">About</div><p class="small">${g.about}</p></div>` : ''}
       ${mine.length ? h`<div class="col gap12"><div class="section-title">Your bookings</div>${mine.map((b) => h`
@@ -402,8 +413,12 @@ function customerHome(slug, data) {
 
 async function customerSlots(slug, data, q) {
   const date = data.dates.some((d) => d.date === q.get('date')) ? q.get('date') : data.dates[0].date;
-  const unitId = Number(q.get('unit')) || data.units[0].id;
-  const unit = data.units.find((u) => u.id === unitId) || data.units[0];
+  const sports = data.sports && data.sports.length ? data.sports : [{ id: 'football', name: 'Football' }];
+  const picked = data.units.find((u) => u.id === Number(q.get('unit')));
+  const sport = picked ? picked.sport || 'football' : sports.some((sp) => sp.id === q.get('sport')) ? q.get('sport') : sports[0].id;
+  const sportUnits = data.units.filter((u) => (u.sport || 'football') === sport);
+  const unit = picked || sportUnits[0];
+  const sportName = (sports.find((sp) => sp.id === sport) || {}).name || '';
   const slots = await api('GET', `/api/g/${slug}/slots?date=${date}`);
   const step = slots.step || 60, minDur = slots.minDur || 60, maxDur = slots.maxDur || 240;
   const price = slots.prices[unit.id];
@@ -440,8 +455,10 @@ async function customerSlots(slug, data, q) {
     <div class="content" style="gap:24px">
       <div class="col gap12"><div class="heading">Date</div>
         <div class="dates" id="dates">${data.dates.map((d) => h`<button class="date ${d.date === date ? 'on' : ''}" data-act="date" data-date="${d.date}" aria-pressed="${d.date === date}"><span class="d">${dayShort(d.date)}</span><span class="n">${dayNum(d.date)}</span></button>`)}</div></div>
-      ${data.units.length > 1 ? h`<div class="col gap12"><div class="heading">Court</div>
-        <div class="seg">${data.units.map((u) => h`<button class="${u.id === unit.id ? 'on' : ''}" data-act="unit" data-unit="${u.id}" aria-pressed="${u.id === unit.id}"><span class="a">${u.name}</span><span class="b">${money(slots.prices[u.id])}/hr</span></button>`)}</div></div>` : ''}
+      ${sports.length > 1 ? h`<div class="col gap12"><div class="heading">Sport</div>
+        <div class="seg">${sports.map((sp) => h`<button class="${sp.id === sport ? 'on' : ''}" data-act="sport" data-sport="${sp.id}" aria-pressed="${sp.id === sport}"><span class="a">${sp.name}</span></button>`)}</div></div>` : ''}
+      ${sportUnits.length > 1 ? h`<div class="col gap12"><div class="heading">Court</div>
+        <div class="seg">${sportUnits.map((u) => h`<button class="${u.id === unit.id ? 'on' : ''}" data-act="unit" data-unit="${u.id}" aria-pressed="${u.id === unit.id}"><span class="a">${u.name}</span><span class="b">${money(slots.prices[u.id])}/hr</span></button>`)}</div></div>` : ''}
       <div class="col gap12"><div class="row between"><div class="heading">Start time</div><div class="small muted">${money(price)} / hour</div></div>
         ${visible.length ? h`
         <div class="tbar-wrap" id="tbar"><div class="tbar" style="--w:${W}px">
@@ -464,6 +481,7 @@ async function customerSlots(slug, data, q) {
     actions: {
       date: (el) => go(url({ date: el.dataset.date }), true),
       unit: (el) => go(url({ unit: el.dataset.unit, ...(start !== null ? { start, dur } : {}) }), true),
+      sport: (el) => go(`/${slug}?${new URLSearchParams({ step: 'slots', date, sport: el.dataset.sport })}`, true),
       pick: (el) => {
         const t = Number(el.dataset.start);
         // Tapping the free block right after the selection makes it longer; anything else starts afresh.
@@ -505,7 +523,7 @@ async function customerSlots(slug, data, q) {
     document.getElementById('dur-hint').textContent = '';
     document.getElementById('sum').classList.remove('hidden');
     document.getElementById('sum-when').textContent = `${fmtDate(date)} · ${minLabel(start)} – ${minLabel(start + dur)}`;
-    document.getElementById('sum-sub').textContent = `${unit.name} · ${durLabel(dur)}`;
+    document.getElementById('sum-sub').textContent = `${sports.length > 1 ? sportName + ' · ' : ''}${unit.name} · ${durLabel(dur)}`;
     document.getElementById('sum-price').textContent = money(total);
     document.getElementById('next').disabled = false;
     history.replaceState(null, '', url({ start, dur }));
@@ -528,6 +546,8 @@ function customerDetails(slug, data, q) {
   const dayInfo = data.dates.find((d) => d.date === date);
   const price = priceForDur(dayInfo && dayInfo.dayType === 'weekend' ? unit.weekend : unit.weekday, dur);
   const me = store.get('gb_me', {});
+  const multi = data.sports && data.sports.length > 1;
+  const sportName = multi ? (data.sports.find((sp) => sp.id === unit.sport) || {}).name : '';
   render(h`<div class="screen" ${photoBg(groundPhoto(slug))}>
     ${topbar('Your details', `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, start, dur })}`)}
     <form class="content" data-form="hold" id="hold-form" novalidate>
@@ -536,7 +556,7 @@ function customerDetails(slug, data, q) {
       <div class="field"><label for="phone">Phone number</label><input class="input" id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="14" value="${me.phone || ''}" required></div>
       <p class="small muted">The ground may call this number if you're running late. No login or password needed.</p>
       <div class="card" style="gap:10px"><div class="heading">Booking</div>
-        ${kv('Date', fmtDate(date))}${kv('Time', `${minLabel(start)} – ${minLabel(start + dur)}`)}${kv('Length', durLabel(dur))}${kv('Court', [unit.name, unit.subtitle].filter(Boolean).join(' · '))}
+        ${kv('Date', fmtDate(date))}${kv('Time', `${minLabel(start)} – ${minLabel(start + dur)}`)}${kv('Length', durLabel(dur))}${sportName ? kv('Sport', sportName) : ''}${kv('Court', [unit.name, unit.subtitle].filter(Boolean).join(' · '))}
         <div class="divider"></div>${kv('Total', money(price), 'total')}</div>
       <div class="form-error banner red hidden" role="alert"></div>
     </form>
@@ -548,7 +568,7 @@ function customerDetails(slug, data, q) {
         try {
           const r = await api('POST', `/api/g/${slug}/bookings`, { unitId: unit.id, date, start, dur, name: f.name, phone: f.phone });
           const list = store.get('gb_bookings', []).filter((b) => b.token !== r.token);
-          list.unshift({ token: r.token, slug, date, start, hour: Math.floor(start / 60), unit: unit.name, ref: '', at: Date.now() });
+          list.unshift({ token: r.token, slug, date, start, hour: Math.floor(start / 60), unit: sportName ? `${sportName} · ${unit.name}` : unit.name, ref: '', at: Date.now() });
           store.set('gb_bookings', list.slice(0, 10));
           go(`/b/${r.token}`);
         } catch (err) {
@@ -1402,10 +1422,13 @@ async function ownerCalendar() {
   // Rows are an hour long, or half an hour when the ground books in half hours (or a booking needs it).
   const rowStep = d.step === 30 || d.bookings.some((b) => startOf(b) % 60 || (b.dur || 60) % 60) ? 30 : 60;
   const open = d.open ?? d.hours[0].hour * 60, close = d.close ?? (d.hours[d.hours.length - 1].hour + 1) * 60;
+  const turfAndCourts = cols.some((c) => c.sport === 'badminton') && cols.some((c) => c.sport !== 'badminton');
   const cellFor = (b, span, rows = 1) => {
-    const full = n > 1 && (b.mask & allMask) === allMask;
+    const full = span > 1;
+    const cricket = b.unit && b.unit.sport === 'cricket';
     const cls = b.kind === 'block' ? 'block' : b.status === 'HOLD' ? 'hold' : b.status === 'PENDING' ? 'pending' : full ? 'full' : 'booked';
-    const label = b.kind === 'block' ? `Closed${b.note && b.note !== 'Closed' ? ' · ' + b.note : ''}` : b.name + (full ? ` · ${b.unit.name}` : '');
+    const tag = cricket ? (full ? 'Cricket, full' : 'Cricket') : full ? 'Full ground' : '';
+    const label = b.kind === 'block' ? `Closed${b.note && b.note !== 'Closed' ? ' · ' + b.note : ''}` : b.name + (tag ? ` · ${tag}` : '');
     const sub = b.status === 'HOLD' ? 'Waiting for payment' : b.status === 'PENDING' ? 'Check payment' : b.kind === 'walkin' ? 'Walk-in' : '';
     const len = (b.dur || 60) !== 60 ? `${minLabel(startOf(b))} – ${minLabel(startOf(b) + b.dur)}` : '';
     return h`<button class="cell ${cls}" style="grid-column:span ${span};grid-row:span ${rows}" data-act="open" data-id="${b.id}">${label}${sub || len ? h`<span class="sub">${[sub, len].filter(Boolean).join(' · ')}</span>` : ''}</button>`;
@@ -1432,8 +1455,8 @@ async function ownerCalendar() {
     <div class="content tight" style="padding-top:20px">
       <div class="row between"><h1 class="display">Calendar</h1><span class="small muted">${fmtDate(d.date)}</span></div>
       <div class="dates">${d.dates.map((x) => h`<button class="date ${x.date === d.date ? 'on' : ''} ${x.date === d.today ? 'today' : ''}" data-act="date" data-date="${x.date}"><span class="d">${x.date === d.today ? 'Today' : dayShort(x.date)}</span><span class="n">${dayNum(x.date)}</span></button>`)}</div>
-      <div class="cal ${rowStep === 30 ? 'halfrows' : ''}" style="grid-template-columns:58px repeat(${n}, 1fr)">
-        <div></div>${n > 1 ? cols.map((c) => h`<div class="colh">${c.name}</div>`) : h`<div class="colh">${cols[0].name}</div>`}
+      <div class="cal ${rowStep === 30 ? 'halfrows' : ''}" style="grid-template-columns:58px repeat(${n}, minmax(0, 1fr))">
+        <div></div>${cols.map((c) => h`<div class="colh">${c.name}${turfAndCourts ? h`<span class="colk">${c.sport === 'badminton' ? 'Badm.' : 'Turf'}</span>` : ''}</div>`)}
         ${rows}
       </div>
       <p class="caption muted" style="letter-spacing:0">Tap a free slot to add a walk-in booking or close it. Tap a booking for details.</p>
@@ -1470,7 +1493,9 @@ async function ownerCalendar() {
   }
 
   function addSheet(start, cell) {
-    const options = d.units.filter((u) => u.mask & cell);
+    // Exact court first (Half A), then the bigger booking (Full ground), then box cricket.
+    const options = d.units.filter((u) => u.mask & cell)
+      .sort((x, y) => (x.sport === 'cricket') - (y.sport === 'cricket') || (y.mask === cell) - (x.mask === cell));
     // Lengths that fit before the next booking on this court (or closing), in 30-minute steps.
     const fits = (u) => { let m = start; while (m < close && !d.bookings.some((x) => x.mask & u.mask && startOf(x) <= m && m < startOf(x) + (x.dur || 60))) m += 30; return m - start; };
     const maxLen = Math.max(...options.map(fits));
@@ -1479,7 +1504,7 @@ async function ownerCalendar() {
     openSheet(h`<form class="col gap16" data-form="add">
       <div class="col" style="gap:2px"><div class="title">${fmtDate(d.date)}, ${minLabel(start)}</div><div class="small muted">Add a walk-in booking or close this slot.</div></div>
       <div class="field"><label>How long</label><select class="input" name="dur">${lens.map((m) => h`<option value="${m}" ${m === defLen ? raw('selected') : ''}>${durLabel(m)} (till ${minLabel(start + m)})</option>`)}</select></div>
-      ${options.length > 1 ? h`<div class="col" style="gap:8px">${options.map((u, i) => h`<label class="radio-row"><input type="radio" name="unitId" value="${u.id}" ${i === options.length - 1 ? raw('checked') : ''}><span class="small strong">${u.name}</span><span class="small muted">${u.subtitle}</span></label>`)}</div>` : h`<input type="hidden" name="unitId" value="${options[0].id}">`}
+      ${options.length > 1 ? h`<div class="col" style="gap:8px">${options.map((u, i) => h`<label class="radio-row"><input type="radio" name="unitId" value="${u.id}" ${i === 0 ? raw('checked') : ''}><span class="small strong">${u.name}</span><span class="small muted">${u.subtitle}</span></label>`)}</div>` : h`<input type="hidden" name="unitId" value="${options[0].id}">`}
       <div class="seg" role="tablist"><button type="button" class="on" data-act="kind" data-kind="walkin"><span class="a">Walk-in booking</span></button><button type="button" data-act="kind" data-kind="block"><span class="a">Close slot</span></button></div>
       <input type="hidden" name="kind" value="walkin">
       <div id="walkin" class="col gap12">
@@ -1536,14 +1561,15 @@ async function ownerPosters() {
   const g = s.ground;
   const link = `${s.publicUrl || location.origin}/${g.slug}`;
   const prices = s.units.flatMap((u) => [u.weekday, u.weekend]).filter((n) => n > 0);
-  const subs = [...new Set(s.units.map((u) => u.subtitle).filter(Boolean))];
+  const subs = [...new Set(s.units.filter((u) => u.sport === 'football').map((u) => u.subtitle).filter(Boolean))];
+  const sportList = [...new Set(s.units.map((u) => u.sportName).filter(Boolean))];
   const phone = String(g.whatsapp || '').replace(/^91(?=\d{10}$)/, '');
   const data = {
     name: g.name, slug: g.slug, area: g.area || '',
     hours: `${hourLabel(g.openHour)} – ${hourLabel(g.closeHour % 24)}`,
     priceFrom: prices.length ? money(Math.min(...prices)) : '',
     phoneLabel: phone.length === 10 ? `Call ${phone.slice(0, 5)} ${phone.slice(5)}` : '',
-    tagline: subs.length ? 'Football · ' + subs.slice(0, 2).join(' & ') : 'Football turf',
+    tagline: sportList.length > 1 ? sportList.join(' · ') : subs.length ? 'Football · ' + subs.slice(0, 2).join(' & ') : 'Football turf',
     url: link, urlShort: link.replace(/^https?:\/\//, ''),
   };
   const st = { tpl: 'splash', fmt: 'a4', photo: s.photos[0] ? s.photos[0].url : null, local: null };
@@ -1690,10 +1716,21 @@ async function ownerSettings() {
       </div>
 
       <div class="slist">
+      ${sect('sports', 'ball', 'Sports', [...new Set(s.units.map((u) => u.sportName))].join(' · ') + (s.sports.badmintonCourts ? ` (${s.sports.badmintonCourts} court${s.sports.badmintonCourts > 1 ? 's' : ''})` : ''), h`
+      <div class="card" style="gap:14px">
+        <div class="row between gap12"><span class="grow"><span class="small strong">Football</span><br><span class="caption muted" style="letter-spacing:0">Your turf${s.units.some((u) => u.sport === 'football' && u.name.startsWith('Half')) ? ': full ground or two halves' : ''}</span></span><span class="small muted">Always on</span></div>
+        <div class="divider"></div>
+        <label class="row between gap12"><span class="grow"><span class="small strong">Box cricket</span><br><span class="caption muted" style="letter-spacing:0">On the same turf. A cricket booking blocks football in that hour, and the other way round.</span></span>
+          <span class="switch"><input type="checkbox" data-change="cricketToggle" ${s.sports.cricket ? raw('checked') : ''} aria-label="Offer box cricket"><span></span></span></label>
+        <div class="divider"></div>
+        <div class="row between gap12"><span class="grow"><span class="small strong">Badminton</span><br><span class="caption muted" style="letter-spacing:0">Indoor courts, separate from the turf.</span></span>
+          <select class="input" style="width:auto;height:44px" data-change="badmintonCourts" aria-label="Number of badminton courts">${Array.from({ length: s.sports.maxBadmintonCourts + 1 }, (_, i) => h`<option value="${i}" ${i === s.sports.badmintonCourts ? raw('selected') : ''}>${i ? `${i} court${i > 1 ? 's' : ''}` : 'Off'}</option>`)}</select></div>
+        <p class="caption muted" style="letter-spacing:0">New sports start with suggested prices. Change them under Prices per hour.</p>
+      </div>`)}
       ${sect('prices', 'rupee', 'Prices per hour', [s.units.map((u) => `${u.name} ${money(u.weekday)}`).join(' · '), g.stepMin === 30 ? 'half hours' : ''].filter(Boolean).join(' · '), h`
       <form class="card" data-form="prices">
         <div class="price-table"><div></div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>
-          ${s.units.map((u) => h`<div class="small strong">${u.name}</div>
+          ${s.units.map((u, i) => h`${new Set(s.units.map((x) => x.sport)).size > 1 && (i === 0 || s.units[i - 1].sport !== u.sport) ? h`<div class="caption strong price-group">${u.sportName.toUpperCase()}</div>` : ''}<div class="small strong">${u.name}</div>
             <input class="input" style="height:44px;text-align:right;padding:0 10px" name="wd_${u.id}" inputmode="numeric" value="${u.weekday}" aria-label="${u.name} weekday price">
             <input class="input" style="height:44px;text-align:right;padding:0 10px;margin-left:6px;width:calc(100% - 6px)" name="we_${u.id}" inputmode="numeric" value="${u.weekend}" aria-label="${u.name} weekend price">`)}</div>
         <div class="field"><label for="stepMin">Booking length</label>
@@ -1797,6 +1834,14 @@ async function ownerSettings() {
       },
       rzpToggle: async (el) => {
         try { await api('PUT', '/api/owner/razorpay', { enabled: el.checked }); toast(el.checked ? 'Razorpay is on' : 'Razorpay is off'); } catch (e) { toast(e.message); }
+        route();
+      },
+      cricketToggle: async (el) => {
+        try { await api('PUT', '/api/owner/sports', { cricket: el.checked }); toast(el.checked ? 'Box cricket is on' : 'Box cricket is off'); } catch (e) { toast(e.message); }
+        route();
+      },
+      badmintonCourts: async (el) => {
+        try { await api('PUT', '/api/owner/sports', { badmintonCourts: Number(el.value) }); toast(Number(el.value) ? 'Badminton courts saved' : 'Badminton is off'); } catch (e) { toast(e.message); }
         route();
       },
       qr: async (el) => {

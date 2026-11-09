@@ -485,3 +485,7 @@ form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
 .dur-btn:disabled, .dur-btn.off { background: var(--surface); color: #b8c0bb; cursor: default; }
 .dur-mid { flex: 1; text-align: center; display: flex; flex-direction: column; gap: 0; }
 .dur-mid .strong { font-size: 17px; }
+/* Multi-sport */
+.cal .colk { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .75; }
+.price-group { grid-column: 1 / -1; color: var(--primary); letter-spacing: .06em; padding-top: 6px; }
+.chip.sport { font-weight: 700; color: var(--primary); }

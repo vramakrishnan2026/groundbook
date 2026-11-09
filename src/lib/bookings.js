@@ -30,18 +30,37 @@ export async function groundById(db, id) {
   return g;
 }
 
+// Sports a unit can belong to, in display order.
+export const SPORTS = { football: 'Football', cricket: 'Box cricket', badminton: 'Badminton' };
+// Badminton courts use cells from this bit up, so they never clash with the turf (bits 0-1).
+export const BADMINTON_FIRST_BIT = 4;
+export const MAX_BADMINTON_COURTS = 8;
+
 export async function unitsWithPrices(db, groundId) {
   const { results } = await db
     .prepare(
-      `SELECT u.id, u.code, u.name, u.subtitle, u.mask, u.sort,
+      `SELECT u.id, u.code, u.name, u.subtitle, u.mask, u.sort, u.sport,
               (SELECT amount FROM prices p WHERE p.unit_id = u.id AND p.day_type = 'weekday') AS weekday,
               (SELECT amount FROM prices p WHERE p.unit_id = u.id AND p.day_type = 'weekend') AS weekend
          FROM units u WHERE u.ground_id = ? AND u.active = 1 ORDER BY u.sort, u.id`
     )
     .bind(groundId)
     .all();
-  return results.map((u) => ({ ...u, weekday: u.weekday ?? 0, weekend: u.weekend ?? 0 }));
+  const order = Object.keys(SPORTS);
+  results.sort((a, b) => order.indexOf(a.sport) - order.indexOf(b.sport) || a.sort - b.sort || a.id - b.id);
+  // With more than one sport, names carry the sport ("Box cricket · Half A") wherever a
+  // booking is shown, so owners and helpers can't mix up a cricket and a football slot.
+  const multi = new Set(results.map((u) => u.sport)).size > 1;
+  return results.map((u) => ({
+    ...u,
+    weekday: u.weekday ?? 0,
+    weekend: u.weekend ?? 0,
+    sportName: SPORTS[u.sport] || u.sport,
+    label: multi ? `${SPORTS[u.sport] || u.sport} · ${u.name}` : u.name,
+  }));
 }
+
+export const sportsOf = (units) => [...new Set(units.map((u) => u.sport))].map((id) => ({ id, name: SPORTS[id] || id }));
 
 export const priceFor = (unit, date) => (dayType(date) === 'weekend' ? unit.weekend : unit.weekday);
 
@@ -206,7 +225,7 @@ export function publicBooking(b, units) {
     dur: durOf(b),
     durLabel: durLabel(durOf(b)),
     timeLabel: timeLabelOf(b),
-    unit: unit ? { id: unit.id, name: unit.name, subtitle: unit.subtitle } : null,
+    unit: unit ? { id: unit.id, name: unit.label, subtitle: unit.subtitle, sport: unit.sport } : null,
     name: b.customer_name,
     phone: b.phone,
     amount: b.amount,
