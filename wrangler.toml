@@ -57,7 +57,7 @@ triggers = { crons = ["*/5 * * * *"] }
 [[env.sandbox.d1_databases]]
 binding = "DB"
 database_name = "groundbook-sandbox"
-database_id = "PASTE-SANDBOX-DATABASE-ID-HERE"
+database_id = "ca71b088-61d2-4461-a075-bf00c3fc328e"
 migrations_dir = "migrations"
 
 [env.sandbox.vars]

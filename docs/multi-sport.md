@@ -23,7 +23,7 @@ The sandbox is a second Worker (`groundbook-sandbox`) with its own database (`gr
 book.goarena.in and its bookings are never touched. All set up in the Cloudflare dashboard:
 
 1. **Storage & databases → D1 → Create database**, name `groundbook-sandbox`. Copy its Database ID
-   into `wrangler.toml` under `[env.sandbox]` (replacing `PASTE-SANDBOX-DATABASE-ID-HERE`) on this branch.
+   into `wrangler.toml` under `[env.sandbox]` on this branch.
 2. **Workers & Pages → Create → Import a repository** → `groundbook`, Worker name `groundbook-sandbox`.
    - Production branch: `multi-sport`
    - Deploy command:
