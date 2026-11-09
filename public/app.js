@@ -27,6 +27,10 @@ const h = (strs, ...vals) => raw(strs.reduce((o, s, i) => o + s + (i < vals.leng
 const ICONS = {
   back: '<path d="m15 18-6-6 6-6"/>',
   right: '<path d="m9 18 6-6-6-6"/>',
+  rupee: '<path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3a5 5 0 0 0 0-10"/>',
+  wallet: '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>',
   pin: '<path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
   phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
@@ -1541,38 +1545,62 @@ async function ownerPosters() {
   draw(true);
 }
 
+// Settings sections: a list of rows that open in place; which ones are open is remembered.
+const settingsOpen = new Set(store.get('gb_settings_open', []));
+const sect = (id, ic, title, sub, inner) => h`<details class="srow" data-sec="${id}" ${settingsOpen.has(id) ? raw('open') : ''}>
+  <summary><span class="srow-ic">${icon(ic, 20)}</span><span class="srow-txt"><span class="srow-t">${title}</span><span class="srow-s">${sub}</span></span><span class="srow-chev">${icon('right', 18)}</span></summary>
+  <div class="srow-body">${inner}</div></details>`;
+document.addEventListener('toggle', (e) => {
+  const d = e.target; if (!(d instanceof HTMLDetailsElement) || !d.classList.contains('srow')) return;
+  if (d.open) settingsOpen.add(d.dataset.sec); else settingsOpen.delete(d.dataset.sec);
+  store.set('gb_settings_open', [...settingsOpen]);
+  if (d.open && d.dataset.sec === 'google' && window.__gbMe) mountGoogleLink(window.__gbMe);
+}, true);
+
 async function ownerSettings() {
   const [s, me] = await Promise.all([api('GET', '/api/owner/settings'), api('GET', '/api/me')]);
   const g = s.ground, rz = s.razorpay;
   const link = `${s.publicUrl || location.origin}/${g.slug}`;
   const qrImg = qrPng(link, 12, 4);
   const hours = Array.from({ length: 25 }, (_, i) => i);
+  const rzStatus = !rz.connected ? 'Not connected' : !rz.enabled ? 'Connected, switched off' : rz.mode === 'test' ? 'On, test mode' : 'On';
   render(h`<div class="screen owner owner-set">
     <div class="content tight" style="padding-top:20px">
       <h1 class="display">Settings</h1>
 
-      <div class="card"><div class="heading">Your booking link</div>
-        <img src="${qrImg}" alt="QR code for ${link}" style="width:180px;margin:0 auto" loading="lazy">
+      <div class="sethead">
+        <div class="row between top gap12"><div class="col" style="gap:2px;min-width:0"><span class="eyebrow">Your ground</span><div class="sethead-name">${g.name}</div>
+          <span class="small muted">${[g.area, g.whatsapp].filter(Boolean).join(' · ')}</span></div>
+          <a class="btn small soft" href="/${g.slug}" target="_blank" rel="noopener">View page</a></div>
         <div class="upi-box"><span class="small strong" style="overflow-wrap:anywhere">${link}</span><button class="link" data-act="copyLink">Copy</button></div>
-        <a class="btn primary" href="/owner/posters" data-go="/owner/posters">${icon('image', 18)} Make a QR poster</a>
-        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR only</a><a class="btn soft" href="/${g.slug}" target="_blank">View page</a></div></div>
+        ${me.ground.paidUntil ? h`<div class="small muted">GoArena plan: ${money(me.ground.planAmount)} / month · paid until ${fmtDate(me.ground.paidUntil)}</div>` : ''}
+      </div>
 
-      <form class="card" data-form="prices"><div class="heading">Price per hour</div>
+      <div class="qtiles">
+        <a class="qtile" href="/owner/posters" data-go="/owner/posters">${icon('qr', 22)}<span>QR &amp; posters</span></a>
+        <button class="qtile" data-act="openSec" data-sec="prices">${icon('rupee', 22)}<span>Prices</span></button>
+        <button class="qtile" data-act="openSec" data-sec="photos">${icon('image', 22)}<span>Photos</span></button>
+        <button class="qtile" data-act="shareLink">${icon('share', 22)}<span>Share link</span></button>
+      </div>
+
+      <div class="slist">
+      ${sect('prices', 'rupee', 'Prices per hour', s.units.map((u) => `${u.name} ${money(u.weekday)}`).join(' · '), h`
+      <form class="card" data-form="prices">
         <div class="price-table"><div></div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>
           ${s.units.map((u) => h`<div class="small strong">${u.name}</div>
             <input class="input" style="height:44px;text-align:right;padding:0 10px" name="wd_${u.id}" inputmode="numeric" value="${u.weekday}" aria-label="${u.name} weekday price">
             <input class="input" style="height:44px;text-align:right;padding:0 10px;margin-left:6px;width:calc(100% - 6px)" name="we_${u.id}" inputmode="numeric" value="${u.weekend}" aria-label="${u.name} weekend price">`)}</div>
-        <button class="btn soft" type="submit">Save prices</button></form>
-
-      <form class="card" data-form="payment"><div class="heading">How customers pay</div>
+        <button class="btn soft" type="submit">Save prices</button></form>`)}
+      ${sect('pay', 'wallet', 'How customers pay', g.upiId ? `UPI: ${g.upiId}` : 'UPI not set yet: customers can\'t pay', h`
+      <form class="card" data-form="payment">
         <div class="field"><label for="upiId">UPI ID</label><input class="input" id="upiId" name="upiId" value="${g.upiId}" placeholder="yourname@ybl" autocomplete="off"></div>
         <div class="field"><label for="upiName">Name shown in UPI apps</label><input class="input" id="upiName" name="upiName" value="${g.upiName}"></div>
         <div class="field"><label>UPI QR code (from your UPI or PhonePe Business app)</label>
           <label class="upload">${g.qrUrl ? h`<img src="${g.qrUrl}" alt="Your UPI QR">` : icon('qr', 24)}<span class="small strong">${g.qrUrl ? 'Change QR image' : 'Upload QR image'}</span><input type="file" accept="image/*" data-change="qr"></label></div>
-        <button class="btn soft" type="submit">Save payment details</button></form>
-
+        <button class="btn soft" type="submit">Save payment details</button></form>`)}
+      ${sect('rzp', 'zap', 'Automatic payments (Razorpay)', rzStatus, h`
       <div class="card" id="razorpay">
-        <div class="row between"><div class="heading">Automatic payments (Razorpay)</div>
+        <div class="row between"><span class="small muted">Status</span>
           <span class="pill ${rz.enabled ? 'green' : ''}">${!rz.connected ? 'Not connected' : !rz.enabled ? 'Off' : rz.mode === 'test' ? 'On · Test mode' : 'On'}</span></div>
         <p class="small muted">Customers tap <b>Pay</b>, approve in their UPI app, and the booking confirms by itself. No screenshots to check. Money goes straight to your bank. Razorpay charges a small fee on each payment.</p>
         ${rz.connected && rz.mode === 'test' ? h`<div class="banner amber">${icon('clock', 18)}<div>Test mode: payments are not real. Connect your <b>Live</b> keys before customers use it.</div></div>` : ''}
@@ -1594,9 +1622,9 @@ async function ownerSettings() {
         </form>
         ${rz.connected ? h`<label class="radio-row"><input type="checkbox" data-change="rzpToggle" ${rz.enabled ? raw('checked') : ''}><span class="grow"><span class="small strong">Use Razorpay for new bookings</span><br><span class="caption muted" style="letter-spacing:0">Customers can still choose UPI + screenshot.</span></span></label>
           <button class="link red" style="align-self:flex-start" data-act="rzpDisconnect">Disconnect Razorpay</button>` : ''}
-      </div>
-
-      <form class="card" data-form="ground"><div class="heading">Ground page</div>
+      </div>`)}
+      ${sect('ground', 'pin', 'Ground page', `${[g.area, `${hourLabel(g.openHour)} – ${hourLabel(g.closeHour % 24)}`].filter(Boolean).join(' · ')}`, h`
+      <form class="card" data-form="ground">
         <div class="field"><label>Ground name</label><input class="input" name="name" value="${g.name}"></div>
         <div class="field"><label>Area</label><input class="input" name="area" value="${g.area}" placeholder="e.g. Edappally, Kochi"></div>
         <div class="field"><label>Google Maps link</label><input class="input" name="mapsUrl" value="${g.mapsUrl}" placeholder="https://maps.app.goo.gl/..."></div>
@@ -1610,33 +1638,37 @@ async function ownerSettings() {
         <div class="field"><label>Free cancellation up to (hours before the slot)</label><input class="input" name="cancelHours" inputmode="numeric" value="${g.cancelHours ?? 24}">
           <p class="small muted">Customers who paid online can cancel themselves until then and get a full refund automatically. 0 = they must call you.</p></div>
         <div class="form-error banner red hidden" role="alert"></div>
-        <button class="btn soft" type="submit">Save ground page</button></form>
-
-      <div class="card"><div class="row between"><div class="heading">Photos</div><span class="small muted">${s.photos.length} / 10</span></div>
+        <button class="btn soft" type="submit">Save ground page</button></form>`)}
+      ${sect('photos', 'image', 'Photos', `${s.photos.length} of 10`, h`
+      <div class="card">
         <div class="photos">${s.photos.map((p) => h`<div class="ph"><img src="${p.url}" alt="Ground photo" loading="lazy"><button data-act="delPhoto" data-id="${p.id}" aria-label="Delete photo">${icon('x', 16)}</button></div>`)}
-          ${s.photos.length < 10 ? h`<label class="ph add">${icon('plus', 22)}<input type="file" accept="image/*" multiple data-change="photos" aria-label="Add photos"></label>` : ''}</div></div>
-
-      <div class="card"><div class="heading">Helpers</div><p class="small muted">Helpers see upcoming bookings with names and phone numbers. They never see money.</p>
+          ${s.photos.length < 10 ? h`<label class="ph add">${icon('plus', 22)}<input type="file" accept="image/*" multiple data-change="photos" aria-label="Add photos"></label>` : ''}</div></div>`)}
+      ${sect('qr', 'qr', 'Booking link & QR code', 'Download the QR, view your page', h`
+      <div class="card">
+        <img src="${qrImg}" alt="QR code for ${link}" style="width:180px;margin:0 auto" loading="lazy">
+        <div class="upi-box"><span class="small strong" style="overflow-wrap:anywhere">${link}</span><button class="link" data-act="copyLink">Copy</button></div>
+        <a class="btn primary" href="/owner/posters" data-go="/owner/posters">${icon('image', 18)} Make a QR poster</a>
+        <div class="btn-row"><a class="btn secondary" href="${qrImg}" download="${g.slug}-booking-qr.png">Download QR only</a><a class="btn soft" href="/${g.slug}" target="_blank">View page</a></div></div>`)}
+      ${sect('helpers', 'user', 'Helpers', s.helpers.length ? s.helpers.map((x) => x.name).join(', ') : 'No helpers yet', h`
+      <div class="card"><p class="small muted">Helpers see upcoming bookings with names and phone numbers. They never see money.</p>
         ${s.helpers.map((x) => h`<div class="row gap12"><div class="circle grey" style="width:36px;height:36px">${icon('user', 18)}</div><div class="grow"><div class="small strong">${x.name}</div><div class="small muted">${x.phone}</div></div><button class="link red" data-act="delHelper" data-id="${x.id}" data-name="${x.name}">Remove</button></div>`)}
         <form class="col gap12" data-form="helper"><div class="grid2"><div class="field"><label>Name</label><input class="input" name="name"></div><div class="field"><label>Phone</label><input class="input" name="phone" type="tel" inputmode="numeric"></div></div>
           <div class="field"><label>PIN for the helper (4–6 digits)</label><input class="input" name="pin" inputmode="numeric" maxlength="6"></div>
-          <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Add helper</button></form></div>
-
-      ${me.ground.paidUntil ? h`<div class="card"><div class="heading">GoArena plan</div>
-        <div class="row between"><span class="small muted">Price</span><span class="strong">${money(me.ground.planAmount)} / month</span></div>
-        <div class="row between"><span class="small muted">Paid until</span><span class="strong">${fmtDate(me.ground.paidUntil)}</span></div></div>` : ''}
-
-      ${googleCard(me)}
-
-      <form class="card" data-form="pin"><div class="heading">Your PIN</div>
+          <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Add helper</button></form></div>`)}
+      ${googleCard(me) ? sect('google', 'shield', 'Google sign-in', me.me.googleEmail || 'Not linked yet', googleCard(me)) : ''}
+      ${sect('pin', 'lock', 'Your PIN', 'Your backup login', h`
+      <form class="card" data-form="pin">
         <div class="grid2"><div class="field"><label>Current PIN</label><input class="input" name="current" type="password" inputmode="numeric" maxlength="6"></div>
           <div class="field"><label>New PIN</label><input class="input" name="pin" type="password" inputmode="numeric" maxlength="6"></div></div>
-        <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Change PIN</button></form>
+        <div class="form-error banner red hidden" role="alert"></div><button class="btn secondary" type="submit">Change PIN</button></form>`)}
+      </div>
 
       <div class="btn-row"><button class="btn secondary" data-go="/helper">Helper view</button><button class="btn danger" data-act="logout">Log out</button></div>
     </div>${ownerNav('set')}</div>`, {
     actions: {
       copyLink: () => copy(link, 'Link copied'),
+      shareLink: async () => { try { if (navigator.share) await navigator.share({ title: g.name, text: `Book ${g.name} online`, url: link }); else copy(link, 'Link copied'); } catch {} },
+      openSec: (el) => { const d = document.querySelector(`details.srow[data-sec="${el.dataset.sec}"]`); if (!d) return; d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
       copyOrigin: () => copy((s.publicUrl || location.origin) + '/' + s.ground.slug, 'Booking page link copied'),
       rzpDisconnect: async () => { if (!confirm('Disconnect Razorpay? Customers will pay by UPI + screenshot again.')) return; await api('DELETE', '/api/owner/razorpay'); toast('Razorpay disconnected'); route(); },
       logout,
@@ -1680,7 +1712,8 @@ async function ownerSettings() {
       pin: async (f, form) => { await api('POST', '/api/staff/pin', f); form.reset(); toast('PIN changed'); },
     },
   });
-  mountGoogleLink(me);
+  window.__gbMe = me;
+  if (settingsOpen.has('google')) mountGoogleLink(me);
 }
 
 // ---------------------------------------------------------------- helper

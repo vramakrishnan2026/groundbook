@@ -34,7 +34,7 @@ try {
   }
 
   await p.goto(`${base}/owner/settings`);
-  await p.getByText('Make a QR poster').click();
+  await p.getByRole('link', { name: /QR & posters/ }).click();
   await p.waitForURL(/\/owner\/posters$/);
   await p.locator('#preview img').waitFor({ timeout: 15000 });
   await p.locator('#thumb-matchday img').waitFor({ timeout: 15000 });

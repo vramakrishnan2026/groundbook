@@ -133,7 +133,8 @@ try {
 
   // ---------------- settings: add a helper, change a price
   await o.getByRole('link', { name: /Settings/ }).click();
-  await expectText(o, 'Your booking link');
+  await expectText(o, 'Your ground');
+  await o.getByRole('button', { name: 'Prices' }).click();          // quick tile opens the Prices section
   await o.fill('[name=wd_1]', '1300');
   await o.getByRole('button', { name: 'Save prices' }).click();
   await expectText(o, 'Prices saved');
@@ -155,6 +156,7 @@ try {
   // ---------------- Razorpay: owner connects keys, customer pays online
   await o.goto(`${base}/owner/settings`);
   await expectText(o, 'Automatic payments (Razorpay)');
+  await o.locator('details[data-sec=rzp] > summary').click();
   await o.fill('#rzpKey', KEY_ID); await o.fill('#rzpSecret', 'WrongSecret12345');
   await o.getByRole('button', { name: 'Connect Razorpay' }).click();
   await expectText(o, 'did not accept');

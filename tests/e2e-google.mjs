@@ -34,7 +34,7 @@ await p.waitForSelector('#gerr:not(.hidden)'); assert.match(await p.textContent(
 
 // 2. PIN once, link Google in Settings
 await p.fill('#phone', '9847012345'); await p.fill('#pin', '1234'); await p.click('button[type=submit]'); await p.waitForURL(/\/owner$/);
-await p.goto(base + '/owner/settings'); await p.waitForSelector('#glink #fake-google');
+await p.goto(base + '/owner/settings'); await p.locator('details[data-sec=google] > summary').click(); await p.waitForSelector('#glink #fake-google');
 await p.locator('#glink').scrollIntoViewIfNeeded(); await shot('settings-link');
 await tapGoogle({ sub: 'rajesh', email: 'rajesh@gmail.com' });
 await p.getByText('Google sign-in is on').waitFor(); await p.getByText('Google sign-in is on').scrollIntoViewIfNeeded(); await shot('settings-linked');

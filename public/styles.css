@@ -391,8 +391,36 @@ form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
   .screen.owner .nav a:hover { background: var(--surface); }
   .screen.owner .nav a.on { background: var(--primary-soft); }
   .owner-today .dash { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 32px; align-items: start; }
-  .owner-set .content { display: block; column-count: 2; column-gap: 28px; }
-  .owner-set .content > * { break-inside: avoid; margin: 0 0 24px; }
-  .owner-set .content > h1 { column-span: all; }
+  .owner-set .slist { display: block; column-count: 2; column-gap: 24px; }
+  .owner-set .slist > .srow { break-inside: avoid; margin-bottom: 14px; }
+  .owner-set .sethead { flex-direction: row; align-items: center; gap: 28px; }
+  .owner-set .sethead > .row { flex: 1; }
+  .owner-set .sethead > .upi-box { flex: 1; }
+  .qtiles { max-width: 720px; }
 }
-@media (min-width: 1500px) { .owner-set .content { column-count: 3; } }
+
+/* Settings in the style of an app profile page: header card, quick tiles, rows that open in place */
+.sethead { background: linear-gradient(135deg, #e9f6ee, #f6fbf8); border: 1px solid #d7eadf; border-radius: var(--r-xl); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.sethead .btn.small { white-space: nowrap; flex: none; }
+.sethead-name { font-size: 26px; font-weight: 800; letter-spacing: -.4px; line-height: 1.15; overflow-wrap: anywhere; }
+.sethead .upi-box { background: #fff; }
+.qtiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.qtile { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 12px; border-radius: var(--r-lg); border: 1.5px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.2; text-align: left; cursor: pointer; text-decoration: none; }
+.qtile:hover { border-color: var(--primary); }
+.qtile svg { color: var(--primary); }
+.slist { display: flex; flex-direction: column; gap: 10px; }
+.srow { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+.srow > summary { list-style: none; display: flex; align-items: center; gap: 14px; padding: 16px; cursor: pointer; min-height: 44px; }
+.srow > summary::-webkit-details-marker { display: none; }
+.srow > summary::marker { content: ''; display: none; }
+.srow > summary::before, .srow[open] > summary::before { content: none; }
+.srow > summary, .srow-t { color: var(--text); }
+.srow-ic { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--surface); color: var(--text); display: grid; place-items: center; }
+.srow-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.srow-t { font-size: 16px; font-weight: 600; }
+.srow-s { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow-chev { color: var(--muted); transition: transform .2s; display: grid; }
+.srow[open] > summary { border-bottom: 1px solid var(--border); }
+.srow[open] .srow-chev { transform: rotate(90deg); }
+.srow-body { padding: 16px; }
+.srow-body > .card { padding: 0; border: 0; box-shadow: none; background: transparent; border-radius: 0; }
