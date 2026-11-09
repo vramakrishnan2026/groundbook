@@ -1,7 +1,7 @@
 // Customer-facing API: no login. A booking is reached through its secret token.
 import {
-  ACTIVE, availability, bookableDates, closeBooking, groundById, groundBySlug, hoursOf, insertBooking,
-  isPastSlot, priceFor, publicBooking, sweepExpired, unitsWithPrices,
+  ACTIVE, MAX_DUR, MIN_DUR, availability, bookableDates, checkSpan, closeBooking, groundById, groundBySlug,
+  insertBooking, isPastStart, priceFor, priceForDur, publicBooking, sweepExpired, unitsWithPrices,
 } from '../lib/bookings.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { createOrder, groundKeys, markPaidOnline, paidPayment, reconcile, signatureOk } from '../lib/razorpay.js';
@@ -33,6 +33,9 @@ export function groundPublic(g) {
     closeHour: g.close_hour,
     holdMinutes: g.hold_minutes,
     cancelHours: g.cancel_hours,
+    stepMin: g.step_min || 60,
+    minDur: MIN_DUR,
+    maxDur: MAX_DUR,
     open: !!g.approved && g.service === 'active',
     demo: !!g.is_demo,
     closedNote: g.service === 'active' ? '' : 'Online booking is paused right now.',
@@ -63,7 +66,10 @@ export async function getSlots(env, slug, url) {
     date,
     dayType: dayType(date),
     prices: Object.fromEntries(units.map((u) => [u.id, priceFor(u, date)])),
-    hours: await availability(env.DB, g, units, date),
+    step: g.step_min || 60,
+    minDur: MIN_DUR,
+    maxDur: MAX_DUR,
+    ...(await availability(env.DB, g, units, date)),
   });
 }
 
@@ -75,11 +81,13 @@ export async function createHold(env, slug, request) {
   const name = cleanName(body.name);
   const phone = cleanPhone(body.phone);
   const date = String(body.date || '');
-  const hour = int(body.hour, 'hour');
+  // `start` and `dur` are minutes; older pages send `hour` for a 1-hour booking.
+  const start = body.start !== undefined ? int(body.start, 'time') : int(body.hour, 'hour') * 60;
+  const dur = body.dur !== undefined ? int(body.dur, 'length') : MIN_DUR;
   const unitId = int(body.unitId, 'court');
   if (!bookableDates(g).includes(date)) throw bad('That date is not open for booking');
-  if (!hoursOf(g).includes(hour)) throw bad('That time is outside opening hours');
-  if (isPastSlot(g, date, hour)) throw bad('That time has already started');
+  checkSpan(g, start, dur);
+  if (isPastStart(g, date, start)) throw bad('That time has already started');
   const units = await unitsWithPrices(db, g.id);
   const unit = units.find((u) => u.id === unitId);
   if (!unit) throw bad('Please pick a court');
@@ -102,8 +110,8 @@ export async function createHold(env, slug, request) {
 
   const now = Date.now();
   const { token } = await insertBooking(db, {
-    groundId: g.id, unitId: unit.id, date, hour, mask: unit.mask, kind: 'customer', status: 'HOLD',
-    name, phone, amount: priceFor(unit, date), ip, holdExpiresAt: now + g.hold_minutes * 60000, now,
+    groundId: g.id, unitId: unit.id, date, start, dur, mask: unit.mask, kind: 'customer', status: 'HOLD',
+    name, phone, amount: priceForDur(priceFor(unit, date), dur), ip, holdExpiresAt: now + g.hold_minutes * 60000, now,
   });
   return json({ token }, 201);
 }

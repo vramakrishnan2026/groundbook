@@ -1,10 +1,11 @@
 // Owner and helper API. Every handler receives the logged-in staff member `me`.
 import {
-  closeBooking, groundById, hoursOf, insertBooking, publicBooking, sweepExpired, unitsWithPrices,
+  STEPS, checkSpan, closeBooking, groundById, hoursOf, insertBooking, priceForDur, publicBooking, sweepExpired,
+  timeLabelOf, unitsWithPrices, startOf,
 } from '../lib/bookings.js';
 import {
   HttpError, addDays, bad, cleanName, cleanPhone, cleanPin, cleanText, dayType, hashPin, hourLabel,
-  int, isDate, json, localNow, mondayOf, readJson, verifyPin,
+  int, isDate, json, localNow, minLabel, mondayOf, readJson, verifyPin,
 } from '../lib/util.js';
 import { files, MAX_FILE_BYTES } from '../lib/files.js';
 import { checkKeys, encryptSecret, fetchRefund, groundKeys, keyMode } from '../lib/razorpay.js';
@@ -46,7 +47,7 @@ export async function today(env, me) {
   const weekStart = mondayOf(now.date);
   const [todayRows, pending, week, refunds] = await Promise.all([
     db.prepare(
-      `SELECT * FROM bookings WHERE ground_id = ? AND date = ? AND status = 'CONFIRMED' AND kind <> 'block' ORDER BY start_hour`
+      `SELECT * FROM bookings WHERE ground_id = ? AND date = ? AND status = 'CONFIRMED' AND kind <> 'block' ORDER BY start_min`
     ).bind(g.id, now.date).all(),
     db.prepare(`SELECT * FROM bookings WHERE ground_id = ? AND status = 'PENDING' ORDER BY proof_at`).bind(g.id).all(),
     db.prepare(
@@ -58,6 +59,7 @@ export async function today(env, me) {
   return json({
     date: now.date,
     nowHour: now.hour,
+    nowMin: now.hour * 60 + now.minute,
     bookingsToday: todayRows.results.length,
     weekTotal: week.total,
     weekCount: week.n,
@@ -73,7 +75,7 @@ export async function listBookings(env, me, url) {
   const status = url.searchParams.get('status') || 'PENDING';
   const units = await unitsWithPrices(db, me.ground_id);
   const { results } = await db
-    .prepare('SELECT * FROM bookings WHERE ground_id = ? AND status = ? ORDER BY date, start_hour LIMIT 200')
+    .prepare('SELECT * FROM bookings WHERE ground_id = ? AND status = ? ORDER BY date, start_min LIMIT 200')
     .bind(me.ground_id, status)
     .all();
   return json({ bookings: results.map((b) => ownerView(b, units)) });
@@ -176,6 +178,10 @@ export async function calendar(env, me, url) {
     date,
     today,
     nowHour: nowLocal.hour,
+    nowMin: nowLocal.hour * 60 + nowLocal.minute,
+    step: g.step_min || 60,
+    open: g.open_hour * 60,
+    close: g.close_hour * 60,
     dates: dates.map((d) => ({ date: d, dayType: dayType(d) })),
     columns,
     units: units.map(({ id, name, subtitle, mask }) => ({ id, name, subtitle, mask })),
@@ -194,20 +200,22 @@ export async function addSlot(env, me, request) {
   if (!unit) throw bad('Pick a court');
   const date = String(body.date || '');
   if (!isDate(date)) throw bad('Invalid date');
-  const hour = int(body.hour, 'hour');
-  if (!hoursOf(g).includes(hour)) throw bad('That time is outside opening hours');
+  // Owners can add any length in 30-minute steps (a 30-minute maintenance close, a 3-hour walk-in).
+  const start = body.start !== undefined ? int(body.start, 'time') : int(body.hour, 'hour') * 60;
+  const dur = body.dur !== undefined ? int(body.dur, 'length') : 60;
+  checkSpan(g, start, dur, { customer: false });
   const kind = body.kind === 'block' ? 'block' : 'walkin';
   const now = Date.now();
   await sweepExpired(db);
   const b = {
-    groundId: g.id, unitId: unit.id, date, hour, mask: unit.mask, kind, status: 'CONFIRMED', now,
+    groundId: g.id, unitId: unit.id, date, start, dur, mask: unit.mask, kind, status: 'CONFIRMED', now,
     decidedAt: now, decidedBy: me.id,
   };
   if (kind === 'walkin') {
     b.name = cleanName(body.name);
     b.phone = body.phone ? cleanPhone(body.phone) : '';
     const listPrice = dayType(date) === 'weekend' ? unit.weekend : unit.weekday;
-    b.amount = body.amount === undefined || body.amount === '' ? listPrice : int(body.amount, 'amount');
+    b.amount = body.amount === undefined || body.amount === '' ? priceForDur(listPrice, dur) : int(body.amount, 'amount');
     if (b.amount < 0) throw bad('Amount looks wrong');
     b.paidVia = 'cash';
     b.note = cleanText(body.note, 140);
@@ -235,6 +243,7 @@ export async function getSettings(env, me) {
       upiName: g.upi_name,
       qrUrl: g.upi_qr_key ? `/api/files/qr/${g.slug}?v=${g.upi_qr_key.split('/').pop()}` : null,
       bookingDays: g.booking_days,
+      stepMin: g.step_min || 60,
     },
     units: units.map(({ id, name, subtitle, weekday, weekend }) => ({ id, name, subtitle, weekday, weekend })),
     photos: await photoUrls(db, g.id),
@@ -299,13 +308,15 @@ export async function saveSettings(env, me, request) {
     const wa = x.whatsapp === undefined ? g.whatsapp : x.whatsapp === '' ? '' : cleanPhone(x.whatsapp);
     const cancelHours = x.cancelHours === undefined ? g.cancel_hours : int(x.cancelHours, 'cancellation window');
     if (cancelHours < 0 || cancelHours > 168) throw bad('Free cancellation must be between 0 and 168 hours before the slot', 'cancelHours');
+    const step = x.stepMin === undefined ? g.step_min || 60 : int(x.stepMin, 'booking step');
+    if (!STEPS.includes(step)) throw bad('Booking step must be 30 or 60 minutes');
     const facilities = Array.isArray(x.facilities)
       ? x.facilities.map((f) => cleanText(f, 30)).filter(Boolean).slice(0, 12)
       : JSON.parse(g.facilities || '[]');
     stmts.push(
       db.prepare(
         `UPDATE grounds SET name = ?, area = ?, maps_url = ?, about = ?, whatsapp = ?, upi_id = ?, upi_name = ?,
-            facilities = ?, open_hour = ?, close_hour = ?, hold_minutes = ?, cancel_hours = ? WHERE id = ?`
+            facilities = ?, open_hour = ?, close_hour = ?, hold_minutes = ?, cancel_hours = ?, step_min = ? WHERE id = ?`
       ).bind(
         x.name === undefined ? g.name : cleanName(x.name, 'ground name', 80),
         x.area === undefined ? g.area : cleanText(x.area, 80),
@@ -313,7 +324,7 @@ export async function saveSettings(env, me, request) {
         x.about === undefined ? g.about : cleanText(x.about, 400),
         wa, upi,
         x.upiName === undefined ? g.upi_name : cleanText(x.upiName, 60),
-        JSON.stringify(facilities), open, close, hold, cancelHours, g.id
+        JSON.stringify(facilities), open, close, hold, cancelHours, step, g.id
       )
     );
   }
@@ -439,10 +450,10 @@ export async function upcoming(env, me) {
   const { results } = await db
     .prepare(
       `SELECT * FROM bookings WHERE ground_id = ? AND status = 'CONFIRMED' AND kind <> 'block'
-          AND date BETWEEN ? AND ? AND (date > ? OR start_hour >= ?)
-        ORDER BY date, start_hour LIMIT 100`
+          AND date BETWEEN ? AND ? AND (date > ? OR start_min + dur_min > ?)
+        ORDER BY date, start_min LIMIT 100`
     )
-    .bind(g.id, now.date, addDays(now.date, 6), now.date, now.hour)
+    .bind(g.id, now.date, addDays(now.date, 6), now.date, now.hour * 60 + now.minute)
     .all();
   // Helpers never see money: amount, UTR and screenshots are left out on purpose.
   return json({
@@ -450,8 +461,8 @@ export async function upcoming(env, me) {
     bookings: results.map((b) => {
       const u = units.find((x) => x.id === b.unit_id);
       return {
-        ref: b.ref, date: b.date, hour: b.start_hour,
-        timeLabel: `${hourLabel(b.start_hour)} – ${hourLabel(b.start_hour + 1)}`,
+        ref: b.ref, date: b.date, hour: Math.floor(startOf(b) / 60), start: startOf(b),
+        timeLabel: timeLabelOf(b),
         unit: u ? u.name : '', name: b.customer_name, phone: b.phone, walkin: b.kind === 'walkin',
       };
     }),

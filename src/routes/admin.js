@@ -96,7 +96,7 @@ export async function detail(env, id) {
     db.prepare(`SELECT id, role, name, phone, google_email, last_login_at, active FROM staff WHERE ground_id = ? AND active = 1 ORDER BY role = 'owner' DESC, id`).bind(g.id).all(),
     db.prepare('SELECT * FROM sub_payments WHERE ground_id = ? ORDER BY id DESC LIMIT 24').bind(g.id).all(),
     db.prepare('SELECT * FROM admin_log WHERE ground_id = ? ORDER BY id DESC LIMIT 30').bind(g.id).all(),
-    db.prepare(`SELECT b.ref, b.date, b.start_hour, b.status, b.kind, b.customer_name, b.amount, b.paid_via, u.name AS unit
+    db.prepare(`SELECT b.ref, b.date, b.start_hour, b.start_min, b.status, b.kind, b.customer_name, b.amount, b.paid_via, u.name AS unit
                   FROM bookings b JOIN units u ON u.id = b.unit_id WHERE b.ground_id = ? AND b.kind <> 'block' ORDER BY b.id DESC LIMIT 15`).bind(g.id).all(),
     db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM bookings WHERE ground_id = ? AND status = 'CONFIRMED' AND kind <> 'block' AND date >= ?`).bind(g.id, addDays(t, -30)).first(),
   ]);
@@ -110,7 +110,7 @@ export async function detail(env, id) {
                        SUM(rzp_order_id IS NOT NULL) AS online
                   FROM bookings WHERE ground_id = ? AND kind = 'customer' AND created_at >= ?`).bind(g.id, Date.now() - 30 * 86400000).first(),
     db.prepare('SELECT * FROM error_log WHERE ground_id = ? ORDER BY id DESC LIMIT 25').bind(g.id).all(),
-    db.prepare(`SELECT ref, date, start_hour, status, amount, rzp_order_id, rzp_payment_id, refund_needed, refund_amount, refund_status, created_at FROM bookings
+    db.prepare(`SELECT ref, date, start_hour, start_min, status, amount, rzp_order_id, rzp_payment_id, refund_needed, refund_amount, refund_status, created_at FROM bookings
                  WHERE ground_id = ? AND rzp_order_id IS NOT NULL ORDER BY id DESC LIMIT 15`).bind(g.id).all(),
     unitsWithPrices(db, g.id),
     photoUrls(db, g.id),
@@ -140,7 +140,7 @@ export async function detail(env, id) {
     razorpay: {
       connected: !!(g.rzp_key_id && g.rzp_key_secret_enc), enabled: !!g.rzp_enabled, keyId: g.rzp_key_id, mode: g.rzp_key_id ? keyMode(g.rzp_key_id) : null,
       connectedAt: g.rzp_connected_at, checkedAt: g.rzp_checked_at, checkError: g.rzp_check_error,
-      bookings: rzpBookings.results.map((b) => ({ ref: b.ref, date: b.date, hour: b.start_hour, status: b.status, amount: b.amount, orderId: b.rzp_order_id, paymentId: b.rzp_payment_id, refundNeeded: !!b.refund_needed, refund: b.refund_amount != null ? { amount: b.refund_amount, status: b.refund_status } : null, createdAt: b.created_at })),
+      bookings: rzpBookings.results.map((b) => ({ ref: b.ref, date: b.date, hour: b.start_hour, start: b.start_min ?? b.start_hour * 60, status: b.status, amount: b.amount, orderId: b.rzp_order_id, paymentId: b.rzp_payment_id, refundNeeded: !!b.refund_needed, refund: b.refund_amount != null ? { amount: b.refund_amount, status: b.refund_status } : null, createdAt: b.created_at })),
     },
     errors: errs.results.map((e) => ({ source: e.source, path: e.path, status: e.status, code: e.code, message: e.message, at: e.at })),
     today: t,
@@ -154,7 +154,7 @@ export async function detail(env, id) {
     staff: staff.results.map((s) => ({ id: s.id, role: s.role, name: s.name, phone: s.phone, googleEmail: s.google_email, lastLogin: s.last_login_at })),
     payments: payments.results.map((p) => ({ id: p.id, amount: p.amount, months: p.months, paidOn: p.paid_on, coversTo: p.covers_to, note: p.note, by: p.by_email })),
     log: logRows.results.map((l) => ({ email: l.email, action: l.action, detail: l.detail, at: l.at })),
-    recent: recent.results.map((b) => ({ ref: b.ref, date: b.date, hour: b.start_hour, status: b.status, kind: b.kind, name: b.customer_name, amount: b.amount, unit: b.unit, paidVia: b.paid_via })),
+    recent: recent.results.map((b) => ({ ref: b.ref, date: b.date, hour: b.start_hour, start: b.start_min ?? b.start_hour * 60, status: b.status, kind: b.kind, name: b.customer_name, amount: b.amount, unit: b.unit, paidVia: b.paid_via })),
   });
 }
 

@@ -86,6 +86,21 @@ export function hourLabel(h) {
   return `${hh} ${h < 12 || h === 24 ? 'AM' : 'PM'}`;
 }
 
+// Minutes after midnight → "7 PM" or "7:30 PM".
+export function minLabel(m) {
+  const h = Math.floor(m / 60), mm = m % 60;
+  const hh = ((h + 11) % 12) + 1;
+  return `${hh}${mm ? ':' + String(mm).padStart(2, '0') : ''} ${h < 12 || h === 24 ? 'AM' : 'PM'}`;
+}
+
+// 60 → "1 hour", 90 → "1 h 30 min", 120 → "2 hours", 30 → "30 min"
+export function durLabel(d) {
+  const h = Math.floor(d / 60), m = d % 60;
+  if (!h) return `${m} min`;
+  if (!m) return h === 1 ? '1 hour' : `${h} hours`;
+  return `${h} h ${m} min`;
+}
+
 // ---------- randomness & crypto ----------
 const B32 = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I/L
 

@@ -1,7 +1,7 @@
 // Cancelling a paid booking and returning the money.
 //  - Paid through Razorpay → refund through the ground's Razorpay account.
 //  - Paid by UPI screenshot → nothing to refund through; flag it so the owner returns it by hand.
-import { closeBooking } from './bookings.js';
+import { closeBooking, startOf } from './bookings.js';
 import { groundKeys, refundPayment } from './razorpay.js';
 import { logError } from './tracking.js';
 import { HttpError, bad } from './util.js';
@@ -9,7 +9,7 @@ import { HttpError, bad } from './util.js';
 // When does the slot start, in ms since epoch? (dates and hours are local to the ground)
 export function slotStartMs(b, tzOffsetMin = 330) {
   const [y, m, d] = b.date.split('-').map(Number);
-  return Date.UTC(y, m - 1, d, b.start_hour, 0) - tzOffsetMin * 60000;
+  return Date.UTC(y, m - 1, d, 0, startOf(b)) - tzOffsetMin * 60000;
 }
 
 export function customerCanCancel(b, g, now = Date.now()) {

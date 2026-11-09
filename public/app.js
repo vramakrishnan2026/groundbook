@@ -50,6 +50,7 @@ const ICONS = {
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/><path d="M8 16H3v5"/>',
   plus: '<path d="M5 12h14M12 5v14"/>',
+  minus: '<path d="M5 12h14"/>',
   trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
 };
 const icon = (n, s = 20) => raw(`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
@@ -60,6 +61,11 @@ const fmtDate = (d) => asDate(d).toLocaleDateString('en-IN', { timeZone: 'UTC', 
 const dayShort = (d) => asDate(d).toLocaleDateString('en-IN', { timeZone: 'UTC', weekday: 'short' });
 const dayNum = (d) => asDate(d).getUTCDate();
 const hourLabel = (hr) => `${((hr + 11) % 12) + 1} ${hr < 12 || hr === 24 ? 'AM' : 'PM'}`;
+// Minutes after midnight → "7 PM" / "7:30 PM"; booking length → "1 hour" / "1 h 30 min".
+const minLabel = (m) => { const hr = Math.floor(m / 60), mm = m % 60; return `${((hr + 11) % 12) + 1}${mm ? ':' + String(mm).padStart(2, '0') : ''} ${hr < 12 || hr === 24 ? 'AM' : 'PM'}`; };
+const durLabel = (d) => { const hr = Math.floor(d / 60), mm = d % 60; return !hr ? `${mm} min` : !mm ? (hr === 1 ? '1 hour' : `${hr} hours`) : `${hr} h ${mm} min`; };
+const startOf = (b) => (b.start ?? b.hour * 60);
+const priceForDur = (hourly, dur) => Math.round((hourly * dur) / 60);
 const addDays = (d, n) => { const x = asDate(d); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const waLink = (phone, text) => `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
 const store = {
@@ -380,7 +386,7 @@ function customerHome(slug, data) {
       </div>
       ${g.about ? h`<div class="col gap12"><div class="section-title">About</div><p class="small">${g.about}</p></div>` : ''}
       ${mine.length ? h`<div class="col gap12"><div class="section-title">Your bookings</div>${mine.map((b) => h`
-        <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${hourLabel(b.hour)}</div>
+        <a class="brow" href="/b/${b.token}" data-go="/b/${b.token}"><div class="time">${minLabel(startOf(b))}</div>
         <div class="grow"><div class="strong">${fmtDate(b.date)}</div><div class="small muted">${b.unit} · ${b.ref}</div></div>${icon('right', 18)}</a>`)}</div>` : ''}
       <a class="powered" href="/" data-go="/"><img src="/brand/ball-front.webp" alt="" width="18" height="18">Booking by <b>GoArena</b></a>
     </div>
@@ -398,56 +404,126 @@ async function customerSlots(slug, data, q) {
   const date = data.dates.some((d) => d.date === q.get('date')) ? q.get('date') : data.dates[0].date;
   const unitId = Number(q.get('unit')) || data.units[0].id;
   const unit = data.units.find((u) => u.id === unitId) || data.units[0];
-  const hour = q.has('hour') ? Number(q.get('hour')) : null;
   const slots = await api('GET', `/api/g/${slug}/slots?date=${date}`);
-  const visible = slots.hours.filter((x) => x.units[unit.id] !== 'past');
-  const selected = visible.find((x) => x.hour === hour && x.units[unit.id] === 'free') ? hour : null;
-  // Changing date or court clears the chosen time; picking a time keeps date and court.
-  const url = (p) => `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, ...p })}`;
+  const step = slots.step || 60, minDur = slots.minDur || 60, maxDur = slots.maxDur || 240;
   const price = slots.prices[unit.id];
+  // The bar is made of blocks the length of the ground's step (1 hour, or 30 minutes).
+  // A block is free only if every half hour in it is free for this court.
+  const cells = slots.cells || slots.hours.flatMap((x) => [0, 30].map((m) => ({ start: x.hour * 60 + m, units: x.units })));
+  const halfState = new Map(cells.map((c) => [c.start, c.units[unit.id]]));
+  const blocks = [];
+  for (let i = 0; i < cells.length; i += step / 30) {
+    const st = cells.slice(i, i + step / 30).map((c) => c.units[unit.id]);
+    blocks.push({ start: cells[i].start, state: st[0] === 'past' ? 'past' : st.every((x) => x === 'free') ? 'free' : 'taken' });
+  }
+  const closeMin = cells.length ? cells[cells.length - 1].start + 30 : 0;
+  const visible = blocks.filter((b) => b.state !== 'past');
+  // Longest booking (up to maxDur) that fits from `start` without hitting a taken or past half hour.
+  const room = (start) => { let d = 0; while (d < maxDur && start + d < closeMin && halfState.get(start + d) === 'free') d += 30; return d - (d % step); };
+  // Selection comes from the link (start + dur), or `hour` from older links.
+  let start = q.has('start') ? Number(q.get('start')) : q.has('hour') ? Number(q.get('hour')) * 60 : null;
+  let dur = Number(q.get('dur')) || minDur;
+  if (start !== null && (start % step || room(start) < minDur || !visible.some((b) => b.start === start))) start = null;
+  if (start !== null) dur = Math.max(minDur, Math.min(dur - (dur % step), room(start)));
+  const url = (p) => `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, ...p })}`;
+  const W = step === 60 ? 56 : 32; // block width in px; an hour is always about 56–64px
+  const firstHourAt = (b) => b.start % 60 === 0;
+
   render(h`<div class="screen" ${photoBg(groundPhoto(slug))}>
-    ${topbar('Pick a slot', `/${slug}`)}
+    ${topbar('Pick a time', `/${slug}`)}
     <div class="content" style="gap:24px">
       <div class="col gap12"><div class="heading">Date</div>
         <div class="dates" id="dates">${data.dates.map((d) => h`<button class="date ${d.date === date ? 'on' : ''}" data-act="date" data-date="${d.date}" aria-pressed="${d.date === date}"><span class="d">${dayShort(d.date)}</span><span class="n">${dayNum(d.date)}</span></button>`)}</div></div>
       ${data.units.length > 1 ? h`<div class="col gap12"><div class="heading">Court</div>
-        <div class="seg">${data.units.map((u) => h`<button class="${u.id === unit.id ? 'on' : ''}" data-act="unit" data-unit="${u.id}" aria-pressed="${u.id === unit.id}"><span class="a">${u.name}</span><span class="b">${u.subtitle}</span></button>`)}</div></div>` : ''}
-      <div class="col gap12"><div class="row between"><div class="heading">Time</div><div class="small muted">${money(price)} / hour</div></div>
-        ${visible.length ? h`<div class="slots">${visible.map((x) => { const st = x.units[unit.id]; return h`<button class="slot ${x.hour === selected ? 'on' : ''}" ${st !== 'free' ? raw('disabled') : ''} data-act="hour" data-hour="${x.hour}" aria-label="${x.label} ${st === 'free' ? 'free' : 'booked'}">${x.label}</button>`; })}</div>`
-          : h`<div class="empty">No more slots today. Pick another date.</div>`}
-        <div class="legend"><span><i style="border:1.5px solid var(--border)"></i>Free</span><span><i style="background:var(--primary)"></i>Selected</span><span><i style="background:var(--taken)"></i>Booked</span></div>
+        <div class="seg">${data.units.map((u) => h`<button class="${u.id === unit.id ? 'on' : ''}" data-act="unit" data-unit="${u.id}" aria-pressed="${u.id === unit.id}"><span class="a">${u.name}</span><span class="b">${money(slots.prices[u.id])}/hr</span></button>`)}</div></div>` : ''}
+      <div class="col gap12"><div class="row between"><div class="heading">Start time</div><div class="small muted">${money(price)} / hour</div></div>
+        ${visible.length ? h`
+        <div class="tbar-wrap" id="tbar"><div class="tbar" style="--w:${W}px">
+          <div class="tbar-labels">${visible.map((b) => h`<span>${firstHourAt(b) ? minLabel(b.start).replace(' ', ' ') : ''}</span>`)}</div>
+          <div class="tbar-cells">${visible.map((b) => h`<button class="tb ${b.state}" data-act="pick" data-start="${b.start}" ${b.state !== 'free' ? raw('disabled') : ''} aria-label="${minLabel(b.start)} ${b.state === 'free' ? 'free' : 'booked'}"></button>`)}</div>
+        </div></div>
+        <div class="legend"><span><i class="lg-free"></i>Free</span><span><i class="lg-sel"></i>Your booking</span><span><i class="lg-taken"></i>Booked</span></div>
+        <div class="dur ${start === null ? 'hidden' : ''}" id="dur">
+          <button class="dur-btn" data-act="less" aria-label="Shorter">${icon('minus', 20)}</button>
+          <div class="dur-mid"><div class="strong" id="dur-len"></div><div class="small muted" id="dur-time"></div></div>
+          <button class="dur-btn" data-act="more" aria-label="Longer">${icon('plus', 20)}</button></div>
+        <p class="small muted" id="dur-hint">${start === null ? `Tap a green block to start. Minimum 1 hour${step === 30 ? ', then add 30 minutes at a time' : ', then add an hour at a time'}.` : ''}</p>`
+        : h`<div class="empty">No more times today. Pick another date.</div>`}
       </div>
     </div>
     <div class="footer">
-      ${selected !== null ? h`<div class="row between"><div class="col" style="gap:0"><div class="strong">${fmtDate(date)} · ${hourLabel(selected)}</div><div class="small muted">${unit.name} · 1 hour</div></div><div class="price">${money(price)}</div></div>` : h`<div class="small muted center">Pick a free time to continue</div>`}
-      <button class="btn primary" ${selected === null ? raw('disabled') : ''} data-act="next">Continue</button>
+      <div class="row between ${start === null ? 'hidden' : ''}" id="sum"><div class="col" style="gap:0"><div class="strong" id="sum-when"></div><div class="small muted" id="sum-sub"></div></div><div class="title" id="sum-price"></div></div>
+      <button class="btn primary" id="next" ${start === null ? raw('disabled') : ''} data-act="next">Continue</button>
     </div></div>`, {
     actions: {
       date: (el) => go(url({ date: el.dataset.date }), true),
-      unit: (el) => go(url({ unit: el.dataset.unit }), true),
-      hour: (el) => go(url({ hour: el.dataset.hour }), true),
-      next: () => go(`/${slug}?${new URLSearchParams({ step: 'details', date, unit: unit.id, hour: selected })}`),
+      unit: (el) => go(url({ unit: el.dataset.unit, ...(start !== null ? { start, dur } : {}) }), true),
+      pick: (el) => {
+        const t = Number(el.dataset.start);
+        // Tapping the free block right after the selection makes it longer; anything else starts afresh.
+        if (start !== null && t === start + dur && room(start) >= dur + step) { dur += step; return update(); }
+        if (start !== null && t >= start && t < start + dur) return;
+        const r = room(t);
+        if (r < minDur) { toast(`From ${minLabel(t)} there isn't a full hour free. Pick another time.`); return; }
+        start = t; dur = Math.max(minDur, Math.min(dur, r));
+        update();
+      },
+      less: () => { if (dur - step >= minDur) { dur -= step; update(); } },
+      more: () => { if (room(start) >= dur + step) { dur += step; update(); } else toast(dur + step > maxDur ? `The longest booking online is ${maxDur / 60} hours.` : `${minLabel(start + dur)} is already booked.`); },
+      next: () => go(`/${slug}?${new URLSearchParams({ step: 'details', date, unit: unit.id, start, dur })}`),
     },
   });
   centerDate();
+
+  function update() {
+    document.querySelectorAll('.tb').forEach((el) => {
+      const t = Number(el.dataset.start), on = start !== null && t >= start && t < start + dur;
+      el.classList.toggle('sel', on);
+      el.classList.toggle('sel-first', on && t === start);
+      el.classList.toggle('sel-last', on && t + step === start + dur);
+    });
+    if (start === null) return;
+    const total = priceForDur(price, dur);
+    document.getElementById('dur').classList.remove('hidden');
+    document.getElementById('dur-len').textContent = durLabel(dur);
+    document.getElementById('dur-time').textContent = `${minLabel(start)} – ${minLabel(start + dur)}`;
+    document.querySelector('[data-act=less]').disabled = dur - step < minDur;
+    document.querySelector('[data-act=more]').classList.toggle('off', room(start) < dur + step);
+    document.getElementById('dur-hint').textContent = '';
+    document.getElementById('sum').classList.remove('hidden');
+    document.getElementById('sum-when').textContent = `${fmtDate(date)} · ${minLabel(start)} – ${minLabel(start + dur)}`;
+    document.getElementById('sum-sub').textContent = `${unit.name} · ${durLabel(dur)}`;
+    document.getElementById('sum-price').textContent = money(total);
+    document.getElementById('next').disabled = false;
+    history.replaceState(null, '', url({ start, dur }));
+  }
+  update();
+  // Scroll the bar so the selection (or the first free time) is in view.
+  const bar = document.getElementById('tbar');
+  if (bar) {
+    const target = bar.querySelector('.tb.sel') || bar.querySelector('.tb.free');
+    if (target) bar.scrollLeft = Math.max(0, target.offsetLeft - 24);
+  }
 }
 
 function customerDetails(slug, data, q) {
-  const date = q.get('date'), hour = Number(q.get('hour'));
+  const date = q.get('date');
+  const start = q.has('start') ? Number(q.get('start')) : Number(q.get('hour')) * 60;
+  const dur = Number(q.get('dur')) || 60;
   const unit = data.units.find((u) => u.id === Number(q.get('unit')));
-  if (!unit || !date || Number.isNaN(hour)) return go(`/${slug}?step=slots`, true);
+  if (!unit || !date || Number.isNaN(start)) return go(`/${slug}?step=slots`, true);
   const dayInfo = data.dates.find((d) => d.date === date);
-  const price = dayInfo && dayInfo.dayType === 'weekend' ? unit.weekend : unit.weekday;
+  const price = priceForDur(dayInfo && dayInfo.dayType === 'weekend' ? unit.weekend : unit.weekday, dur);
   const me = store.get('gb_me', {});
   render(h`<div class="screen" ${photoBg(groundPhoto(slug))}>
-    ${topbar('Your details', `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, hour })}`)}
+    ${topbar('Your details', `/${slug}?${new URLSearchParams({ step: 'slots', date, unit: unit.id, start, dur })}`)}
     <form class="content" data-form="hold" id="hold-form" novalidate>
       <div class="banner amber">${icon('clock', 22)}<div><div class="strong">We hold the slot for ${data.ground.holdMinutes} minutes</div><div>Pay by UPI and send the screenshot within that time.</div></div></div>
       <div class="field"><label for="name">Your name</label><input class="input" id="name" name="name" autocomplete="name" value="${me.name || ''}" required></div>
       <div class="field"><label for="phone">Phone number</label><input class="input" id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="14" value="${me.phone || ''}" required></div>
       <p class="small muted">The ground may call this number if you're running late. No login or password needed.</p>
       <div class="card" style="gap:10px"><div class="heading">Booking</div>
-        ${kv('Date', fmtDate(date))}${kv('Time', `${hourLabel(hour)} – ${hourLabel(hour + 1)}`)}${kv('Court', [unit.name, unit.subtitle].filter(Boolean).join(' · '))}
+        ${kv('Date', fmtDate(date))}${kv('Time', `${minLabel(start)} – ${minLabel(start + dur)}`)}${kv('Length', durLabel(dur))}${kv('Court', [unit.name, unit.subtitle].filter(Boolean).join(' · '))}
         <div class="divider"></div>${kv('Total', money(price), 'total')}</div>
       <div class="form-error banner red hidden" role="alert"></div>
     </form>
@@ -457,9 +533,9 @@ function customerDetails(slug, data, q) {
       hold: async (f) => {
         store.set('gb_me', { name: f.name, phone: f.phone });
         try {
-          const r = await api('POST', `/api/g/${slug}/bookings`, { unitId: unit.id, date, hour, name: f.name, phone: f.phone });
+          const r = await api('POST', `/api/g/${slug}/bookings`, { unitId: unit.id, date, start, dur, name: f.name, phone: f.phone });
           const list = store.get('gb_bookings', []).filter((b) => b.token !== r.token);
-          list.unshift({ token: r.token, slug, date, hour, unit: unit.name, ref: '', at: Date.now() });
+          list.unshift({ token: r.token, slug, date, start, hour: Math.floor(start / 60), unit: unit.name, ref: '', at: Date.now() });
           store.set('gb_bookings', list.slice(0, 10));
           go(`/b/${r.token}`);
         } catch (err) {
@@ -483,7 +559,7 @@ async function bookingPage(token) {
     ${kv('Booking ID', b.ref)}${kv('Name', b.name)}${kv('Date', fmtDate(b.date))}${kv('Time', b.timeLabel)}${kv('Court', [b.unit.name, b.unit.subtitle].filter(Boolean).join(' · '))}
     <div class="divider"></div>${kv(b.status === 'CONFIRMED' ? (b.paidVia === 'razorpay' ? 'Paid online' : 'Paid') : 'Amount', money(b.amount), 'total')}</div>`;
   const contact = g.whatsapp ? h`<div class="btn-row">
-      <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${hourLabel(b.hour)}.`)}" target="_blank" rel="noopener">${icon('chat', 18)} WhatsApp</a>
+      <a class="btn secondary" href="${waLink(g.whatsapp, `Hi, about my booking ${b.ref} on ${fmtDate(b.date)} at ${minLabel(startOf(b))}.`)}" target="_blank" rel="noopener">${icon('chat', 18)} WhatsApp</a>
       <a class="btn soft" href="tel:+91${g.whatsapp}">${icon('phone', 18)} Call ground</a></div>` : '';
   const result = (circle, title, text, extra = '', footer = '') => render(h`<div class="screen" ${photoBg(groundPhoto(g.slug))}>
     ${topbar(g.name, `/${g.slug}`)}
@@ -510,7 +586,7 @@ async function bookingPage(token) {
   }
   if (b.status === 'CONFIRMED') {
     const hrs = (data.policy && data.policy.cancelHours) || 0;
-    const startMs = Date.UTC(...b.date.split('-').map((x, i) => Number(x) - (i === 1 ? 1 : 0)), b.hour) - 330 * 60000;
+    const startMs = Date.UTC(...b.date.split('-').map((x, i) => Number(x) - (i === 1 ? 1 : 0)), 0, startOf(b)) - 330 * 60000;
     const freeUntil = new Date(startMs - hrs * 3600000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     const policy = b.kind !== 'customer' ? '' : b.canCancel
       ? h`<div class="card" style="gap:8px"><div class="small"><span class="strong">Free cancellation until ${freeUntil}.</span> You get the full ${money(b.amount)} back to the account you paid from.</div>
@@ -587,7 +663,7 @@ function payPage(token, data) {
       <div><span class="pill amber">${icon('clock', 16)} Slot held · <span id="countdown">--:--</span> left</span></div>
       <div class="card" style="align-items:center;gap:4px;padding:20px 16px">
         <div class="small muted">Amount to pay</div><div class="display">${money(b.amount)}</div>
-        <div class="small muted">${fmtDate(b.date)} · ${hourLabel(b.hour)} · ${b.unit.name}</div></div>
+        <div class="small muted">${fmtDate(b.date)} · ${minLabel(startOf(b))} · ${b.unit.name}</div></div>
       ${p.razorpay ? h`
       <div class="card">
         <div class="row gap12"><div class="circle soft">${icon('shield', 22)}</div><div class="grow"><div class="strong">Pay securely online</div><div class="small muted">UPI apps, cards or netbanking. Your slot is confirmed the moment you pay.</div></div></div>
@@ -979,7 +1055,7 @@ function razorpayCard(d) {
     <div id="rzpList"></div>
     <div class="strong small">GoArena bookings paid online</div>
     ${r.bookings.length ? h`<div class="table-scroll"><table class="mini"><thead><tr><th>Booking</th><th>Slot</th><th>Status</th><th>Razorpay</th><th></th></tr></thead><tbody>
-      ${r.bookings.map((b) => h`<tr><td class="strong nowrap">${b.ref}</td><td class="nowrap small">${shortDate(b.date)} ${hourLabel(b.hour)}</td>
+      ${r.bookings.map((b) => h`<tr><td class="strong nowrap">${b.ref}</td><td class="nowrap small">${shortDate(b.date)} ${minLabel(startOf(b))}</td>
         <td><span class="pill ${b.status === 'CONFIRMED' ? 'green' : b.status === 'HOLD' ? 'amber' : ''}">${b.status.toLowerCase()}</span>${b.refundNeeded ? h` <span class="pill red">refund due</span>` : ''}${b.refund ? h` <span class="pill ${b.refund.status === 'processed' ? 'green' : b.refund.status === 'failed' ? 'red' : 'amber'}">refund ${money(b.refund.amount)} ${b.refund.status}</span>` : ''}</td>
         <td class="small"><code>${b.paymentId || b.orderId}</code></td>
         <td>${b.paymentId ? '' : h`<button class="link" data-act="recheckRef" data-ref="${b.ref}">Re-check</button>`}</td></tr>`)}</tbody></table></div>`
@@ -1072,7 +1148,7 @@ async function adminGround(id) {
         ${g.demo ? '' : h`<button class="btn secondary" data-act="demo">Duplicate as demo ground</button>`}</div>
 
       <div class="card"><div class="heading">Latest bookings</div>
-        ${d.recent.length ? d.recent.map((b) => h`<div class="row between small"><span>${dayShort(b.date)} ${shortDate(b.date)} ${hourLabel(b.hour)} · ${b.name || 'Walk-in'} · ${b.unit}</span><span class="${b.status === 'CONFIRMED' ? 'strong' : 'muted'}">${b.status === 'CONFIRMED' ? money(b.amount) : b.status.toLowerCase()}</span></div>`)
+        ${d.recent.length ? d.recent.map((b) => h`<div class="row between small"><span>${dayShort(b.date)} ${shortDate(b.date)} ${minLabel(startOf(b))} · ${b.name || 'Walk-in'} · ${b.unit}</span><span class="${b.status === 'CONFIRMED' ? 'strong' : 'muted'}">${b.status === 'CONFIRMED' ? money(b.amount) : b.status.toLowerCase()}</span></div>`)
           : h`<p class="small muted">No bookings yet.</p>`}</div>
 
       <div class="card"><div class="row between"><div class="heading">Errors</div><span class="small muted">last 30 days</span></div>
@@ -1170,9 +1246,9 @@ const ownerNav = (active, pending = 0) => h`<nav class="nav"><img class="nav-log
   <a href="/owner/settings" data-go="/owner/settings" class="${active === 'set' ? 'on' : ''}">${icon('settings', 22)}<span>Settings</span></a></nav>`;
 
 const bookingRow = (b, { showAmount = false, act } = {}) => h`<div class="brow" ${act ? raw(`data-act="${act}" data-id="${b.id}" role="button" tabindex="0" style="cursor:pointer"`) : ''}>
-  <div class="time">${hourLabel(b.hour)}</div>
+  <div class="time">${minLabel(startOf(b))}</div>
   <div class="grow col" style="gap:2px"><div class="strong">${b.kind === 'block' ? 'Closed' : b.name}</div>
-    <div class="small muted">${[b.unit && b.unit.name, b.phone, showAmount && b.amount ? money(b.amount) + (b.paidVia === 'razorpay' ? ' online' : '') : null, b.kind === 'walkin' ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
+    <div class="small muted">${[b.unit && b.unit.name, b.dur && b.dur !== 60 ? durLabel(b.dur) : null, b.phone, showAmount && b.amount ? money(b.amount) + (b.paidVia === 'razorpay' ? ' online' : '') : null, b.kind === 'walkin' ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
   ${b.phone ? h`<a class="call" href="tel:+91${b.phone}" aria-label="Call ${b.name}">${icon('phone', 20)}</a>` : ''}</div>`;
 
 // What the owner sees about their GoArena service and subscription.
@@ -1207,15 +1283,15 @@ async function ownerToday() {
         const why = b.status === 'CANCELLED'
           ? (b.refund && b.refund.status === 'failed'
             ? `booking cancelled, but Razorpay couldn't send the refund. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).`
-            : `booking for ${hourLabel(b.hour)} ${dayShort(b.date)} was cancelled. They paid by UPI, so send it back by UPI.`)
-          : `paid online after the ${hourLabel(b.hour)} ${dayShort(b.date)} slot was taken. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).`;
+            : `booking for ${minLabel(startOf(b))} ${dayShort(b.date)} was cancelled. They paid by UPI, so send it back by UPI.`)
+          : `paid online after the ${minLabel(startOf(b))} ${dayShort(b.date)} slot was taken. Refund it from your Razorpay dashboard (Payments → ${b.rzpPaymentId}).`;
         return h`<div class="banner red" style="align-items:center">${icon('x', 20)}<div class="grow"><div class="strong">Refund ${money(amt)} to ${b.name}</div>
           <div>${b.phone} · ${why}</div></div>
           <button class="btn small danger" style="background:#fff" data-act="refunded" data-id="${b.id}">Done</button></div>`; })}
       ${t.pending.length ? h`<div class="col gap12">${t.pending.map((b) => h`
         <div class="pending" data-go="/owner/review/${b.id}" role="button" tabindex="0">
           <div class="circle" style="background:#fff;color:var(--amber)">${icon('clock', 20)}</div>
-          <div class="grow"><div class="strong">Check payment · ${money(b.amount)}</div><div class="small amber">${b.name} · ${dayShort(b.date)} ${dayNum(b.date)} · ${hourLabel(b.hour)} · ${b.unit.name}</div></div>
+          <div class="grow"><div class="strong">Check payment · ${money(b.amount)}</div><div class="small amber">${b.name} · ${dayShort(b.date)} ${dayNum(b.date)} · ${minLabel(startOf(b))} · ${b.unit.name}</div></div>
           <span class="btn small" style="background:var(--amber);color:#fff;min-height:36px">Review</span></div>`)}</div>`
         : h`<div class="banner green">${icon('check', 20)}<div>No payments waiting for you.</div></div>`}
       </div><div class="dash-col">
@@ -1308,33 +1384,42 @@ async function ownerCalendar() {
   const q = new URLSearchParams(location.search);
   const d = await api('GET', `/api/owner/calendar${q.get('date') ? `?date=${q.get('date')}` : ''}`);
   const cols = d.columns, n = cols.length, allMask = cols.reduce((m, c) => m | c.cell, 0);
-  const isPast = (hr) => d.date < d.today || (d.date === d.today && hr <= d.nowHour);
-  const cellFor = (b, span) => {
+  const nowMin = d.nowMin ?? d.nowHour * 60;
+  const isPast = (m) => d.date < d.today || (d.date === d.today && m <= nowMin);
+  // Rows are an hour long, or half an hour when the ground books in half hours (or a booking needs it).
+  const rowStep = d.step === 30 || d.bookings.some((b) => startOf(b) % 60 || (b.dur || 60) % 60) ? 30 : 60;
+  const open = d.open ?? d.hours[0].hour * 60, close = d.close ?? (d.hours[d.hours.length - 1].hour + 1) * 60;
+  const cellFor = (b, span, rows = 1) => {
     const full = n > 1 && (b.mask & allMask) === allMask;
     const cls = b.kind === 'block' ? 'block' : b.status === 'HOLD' ? 'hold' : b.status === 'PENDING' ? 'pending' : full ? 'full' : 'booked';
     const label = b.kind === 'block' ? `Closed${b.note && b.note !== 'Closed' ? ' · ' + b.note : ''}` : b.name + (full ? ` · ${b.unit.name}` : '');
     const sub = b.status === 'HOLD' ? 'Waiting for payment' : b.status === 'PENDING' ? 'Check payment' : b.kind === 'walkin' ? 'Walk-in' : '';
-    return h`<button class="cell ${cls}" style="grid-column:span ${span}" data-act="open" data-id="${b.id}">${label}${sub ? h`<span class="sub">${sub}</span>` : ''}</button>`;
+    const len = (b.dur || 60) !== 60 ? `${minLabel(startOf(b))} – ${minLabel(startOf(b) + b.dur)}` : '';
+    return h`<button class="cell ${cls}" style="grid-column:span ${span};grid-row:span ${rows}" data-act="open" data-id="${b.id}">${label}${sub || len ? h`<span class="sub">${[sub, len].filter(Boolean).join(' · ')}</span>` : ''}</button>`;
   };
-  const rows = d.hours.map(({ hour, label }) => {
-    const out = [h`<div class="t">${label}</div>`];
+  const covering = (t, cell) => d.bookings.find((x) => x.mask & cell && startOf(x) <= t && t < startOf(x) + (x.dur || 60));
+  const rows = [];
+  for (let t = open; t < close; t += rowStep) {
+    const out = [h`<div class="t ${t % 60 ? 'half' : ''}">${t % 60 ? `${minLabel(t).split(' ')[0]}` : minLabel(t)}</div>`];
     for (let i = 0; i < n; i++) {
-      const b = d.bookings.find((x) => x.hour === hour && x.mask & cols[i].cell);
+      const b = covering(t, cols[i].cell);
+      if (b && startOf(b) < t && t !== open) continue; // drawn by an earlier row
       if (b) {
         let span = 1;
         while (i + span < n && b.mask & cols[i + span].cell) span++;
-        out.push(cellFor(b, span)); i += span - 1;
+        const end = Math.min(startOf(b) + (b.dur || 60), close);
+        out.push(cellFor(b, span, Math.max(1, Math.ceil((end - Math.max(startOf(b), t)) / rowStep)))); i += span - 1;
       } else {
-        out.push(h`<button class="cell free ${isPast(hour) ? 'past' : ''}" ${isPast(hour) ? raw('disabled') : ''} data-act="add" data-hour="${hour}" data-cell="${cols[i].cell}">${isPast(hour) ? '' : 'Free'}</button>`);
+        out.push(h`<button class="cell free ${rowStep === 30 ? 'short' : ''} ${isPast(t) ? 'past' : ''}" ${isPast(t) ? raw('disabled') : ''} data-act="add" data-start="${t}" data-cell="${cols[i].cell}">${isPast(t) ? '' : 'Free'}</button>`);
       }
     }
-    return out;
-  });
+    rows.push(out);
+  }
   render(h`<div class="screen owner owner-cal">
     <div class="content tight" style="padding-top:20px">
       <div class="row between"><h1 class="display">Calendar</h1><span class="small muted">${fmtDate(d.date)}</span></div>
       <div class="dates">${d.dates.map((x) => h`<button class="date ${x.date === d.date ? 'on' : ''} ${x.date === d.today ? 'today' : ''}" data-act="date" data-date="${x.date}"><span class="d">${x.date === d.today ? 'Today' : dayShort(x.date)}</span><span class="n">${dayNum(x.date)}</span></button>`)}</div>
-      <div class="cal" style="grid-template-columns:52px repeat(${n}, 1fr)">
+      <div class="cal ${rowStep === 30 ? 'halfrows' : ''}" style="grid-template-columns:58px repeat(${n}, 1fr)">
         <div></div>${n > 1 ? cols.map((c) => h`<div class="colh">${c.name}</div>`) : h`<div class="colh">${cols[0].name}</div>`}
         ${rows}
       </div>
@@ -1343,7 +1428,7 @@ async function ownerCalendar() {
     actions: {
       date: (el) => go(`/owner/calendar?date=${el.dataset.date}`, true),
       open: (el) => openBooking(d.bookings.find((x) => String(x.id) === el.dataset.id)),
-      add: (el) => addSheet(Number(el.dataset.hour), Number(el.dataset.cell)),
+      add: (el) => addSheet(Number(el.dataset.start), Number(el.dataset.cell)),
     },
   });
   centerDate();
@@ -1371,10 +1456,16 @@ async function ownerCalendar() {
     });
   }
 
-  function addSheet(hour, cell) {
+  function addSheet(start, cell) {
     const options = d.units.filter((u) => u.mask & cell);
+    // Lengths that fit before the next booking on this court (or closing), in 30-minute steps.
+    const fits = (u) => { let m = start; while (m < close && !d.bookings.some((x) => x.mask & u.mask && startOf(x) <= m && m < startOf(x) + (x.dur || 60))) m += 30; return m - start; };
+    const maxLen = Math.max(...options.map(fits));
+    const lens = []; for (let m = 30; m <= Math.min(maxLen, 8 * 60); m += 30) lens.push(m);
+    const defLen = lens.includes(60) ? 60 : lens[lens.length - 1];
     openSheet(h`<form class="col gap16" data-form="add">
-      <div class="col" style="gap:2px"><div class="title">${fmtDate(d.date)}, ${hourLabel(hour)}</div><div class="small muted">Add a walk-in booking or close this slot.</div></div>
+      <div class="col" style="gap:2px"><div class="title">${fmtDate(d.date)}, ${minLabel(start)}</div><div class="small muted">Add a walk-in booking or close this slot.</div></div>
+      <div class="field"><label>How long</label><select class="input" name="dur">${lens.map((m) => h`<option value="${m}" ${m === defLen ? raw('selected') : ''}>${durLabel(m)} (till ${minLabel(start + m)})</option>`)}</select></div>
       ${options.length > 1 ? h`<div class="col" style="gap:8px">${options.map((u, i) => h`<label class="radio-row"><input type="radio" name="unitId" value="${u.id}" ${i === options.length - 1 ? raw('checked') : ''}><span class="small strong">${u.name}</span><span class="small muted">${u.subtitle}</span></label>`)}</div>` : h`<input type="hidden" name="unitId" value="${options[0].id}">`}
       <div class="seg" role="tablist"><button type="button" class="on" data-act="kind" data-kind="walkin"><span class="a">Walk-in booking</span></button><button type="button" data-act="kind" data-kind="block"><span class="a">Close slot</span></button></div>
       <input type="hidden" name="kind" value="walkin">
@@ -1393,7 +1484,7 @@ async function ownerCalendar() {
         s.querySelector('#block').classList.toggle('hidden', el.dataset.kind !== 'block');
       },
       add: async (f) => {
-        await api('POST', '/api/owner/slots', { ...f, unitId: Number(f.unitId), date: d.date, hour, amount: f.amount === '' ? undefined : f.amount });
+        await api('POST', '/api/owner/slots', { ...f, unitId: Number(f.unitId), date: d.date, start, dur: Number(f.dur), amount: f.amount === '' ? undefined : f.amount });
         closeSheet(); toast(f.kind === 'block' ? 'Slot closed' : 'Booking added'); route();
       },
     });
@@ -1586,12 +1677,17 @@ async function ownerSettings() {
       </div>
 
       <div class="slist">
-      ${sect('prices', 'rupee', 'Prices per hour', s.units.map((u) => `${u.name} ${money(u.weekday)}`).join(' · '), h`
+      ${sect('prices', 'rupee', 'Prices per hour', [s.units.map((u) => `${u.name} ${money(u.weekday)}`).join(' · '), g.stepMin === 30 ? 'half hours' : ''].filter(Boolean).join(' · '), h`
       <form class="card" data-form="prices">
         <div class="price-table"><div></div><div class="caption muted r">MON–FRI</div><div class="caption muted r">SAT–SUN</div>
           ${s.units.map((u) => h`<div class="small strong">${u.name}</div>
             <input class="input" style="height:44px;text-align:right;padding:0 10px" name="wd_${u.id}" inputmode="numeric" value="${u.weekday}" aria-label="${u.name} weekday price">
             <input class="input" style="height:44px;text-align:right;padding:0 10px;margin-left:6px;width:calc(100% - 6px)" name="we_${u.id}" inputmode="numeric" value="${u.weekend}" aria-label="${u.name} weekend price">`)}</div>
+        <div class="field"><label for="stepMin">Booking length</label>
+          <select class="input" id="stepMin" name="stepMin">
+            <option value="60" ${(g.stepMin || 60) === 60 ? raw('selected') : ''}>Whole hours (1 h, 2 h…)</option>
+            <option value="30" ${g.stepMin === 30 ? raw('selected') : ''}>Half hours (1 h, 1½ h…)</option></select>
+          <span class="small muted">Customers always book at least 1 hour. Prices are per hour, so 1 h 30 min costs 1.5 × the hourly price.</span></div>
         <button class="btn soft" type="submit">Save prices</button></form>`)}
       ${sect('pay', 'wallet', 'How customers pay', g.upiId ? `UPI: ${g.upiId}` : 'UPI not set yet: customers can\'t pay', h`
       <form class="card" data-form="payment">
@@ -1702,7 +1798,7 @@ async function ownerSettings() {
         toast('Razorpay connected'); route();
       },
       prices: async (f) => {
-        await api('PUT', '/api/owner/settings', { prices: s.units.map((u) => ({ unitId: u.id, weekday: f[`wd_${u.id}`], weekend: f[`we_${u.id}`] })) });
+        await api('PUT', '/api/owner/settings', { ground: { stepMin: Number(f.stepMin) }, prices: s.units.map((u) => ({ unitId: u.id, weekday: f[`wd_${u.id}`], weekend: f[`we_${u.id}`] })) });
         toast('Prices saved');
       },
       payment: async (f) => { await api('PUT', '/api/owner/settings', { ground: { upiId: f.upiId.trim(), upiName: f.upiName } }); toast('Payment details saved'); },
@@ -1730,7 +1826,7 @@ async function helperPage() {
         <button class="iconbtn" aria-label="Refresh" data-act="refresh">${icon('refresh', 18)}</button></div>
       <div class="banner grey">${icon('lock', 18)}<div>${me.ground.name}. You see names, times and phone numbers only.</div></div>
       ${Object.keys(groups).length ? Object.entries(groups).map(([d, list]) => h`<div class="col gap12"><div class="section-title">${label(d)}</div>
-        ${list.map((b) => h`<div class="brow"><div class="time">${hourLabel(b.hour)}</div><div class="grow col" style="gap:2px"><div class="strong">${b.name}</div>
+        ${list.map((b) => h`<div class="brow"><div class="time">${minLabel(startOf(b))}</div><div class="grow col" style="gap:2px"><div class="strong">${b.name}</div>
           <div class="small muted">${[b.unit, b.phone, b.walkin ? 'Walk-in' : null].filter(Boolean).join(' · ')}</div></div>
           ${b.phone ? h`<a class="call" href="tel:+91${b.phone}" aria-label="Call ${b.name}">${icon('phone', 20)}</a>` : ''}</div>`)}</div>`)
         : h`<div class="empty">No bookings in the next 7 days yet.</div>`}

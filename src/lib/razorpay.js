@@ -1,7 +1,8 @@
 // Razorpay, per ground. Each owner connects their own Razorpay account, so money goes
 // straight to them. We create an order, open Razorpay Checkout in the browser, then
 // confirm the booking only after checking the payment with Razorpay's API.
-import { HttpError, bitsOf } from './util.js';
+import { HttpError } from './util.js';
+import { durOf, lockStmts, startOf } from './bookings.js';
 
 const API = 'https://api.razorpay.com/v1';
 
@@ -125,10 +126,7 @@ export async function markPaidOnline(db, booking, payment) {
   // EXPIRED / CANCELLED: re-lock the cells and confirm in one transaction.
   try {
     await db.batch([
-      ...bitsOf(booking.mask).map((cell) =>
-        db.prepare('INSERT INTO slot_locks (ground_id, date, hour, cell, booking_token) VALUES (?,?,?,?,?)')
-          .bind(booking.ground_id, booking.date, booking.start_hour, cell, booking.token)
-      ),
+      ...lockStmts(db, booking.ground_id, booking.date, startOf(booking), durOf(booking), booking.mask, booking.token),
       db.prepare(`UPDATE bookings SET status = 'CONFIRMED', paid_via = 'razorpay', rzp_payment_id = ?, decided_at = ? WHERE id = ?`)
         .bind(payment.id, now, booking.id),
     ]);

@@ -1,7 +1,21 @@
 // Booking rules: slots, prices, holds and clash-free booking.
-import { HttpError, addDays, bitsOf, dayType, hourLabel, localNow, randomRef, randomToken } from './util.js';
+import { HttpError, addDays, bad, bitsOf, dayType, durLabel, hourLabel, localNow, minLabel, randomRef, randomToken } from './util.js';
 
 export const ACTIVE = ['HOLD', 'PENDING', 'CONFIRMED'];
+
+// Booking length rules. Customers book at least an hour, in the ground's step (30 or 60 minutes),
+// up to MAX_DUR. Owners can add walk-ins or close the ground in any 30-minute step.
+export const MIN_DUR = 60;
+export const MAX_DUR = 240;
+export const STEPS = [30, 60];
+
+// Start and length of a stored booking, in minutes (older rows only have start_hour).
+export const startOf = (b) => (b.start_min ?? b.start_hour * 60);
+export const durOf = (b) => b.dur_min || 60;
+export const timeLabelOf = (b) => `${minLabel(startOf(b))} – ${minLabel(startOf(b) + durOf(b))}`;
+
+// Price for a booking of `dur` minutes, from the hourly price.
+export const priceForDur = (hourly, dur) => Math.round((hourly * dur) / 60);
 
 export async function groundBySlug(db, slug) {
   const g = await db.prepare('SELECT * FROM grounds WHERE slug = ? AND active = 1').bind(String(slug)).first();
@@ -50,8 +64,45 @@ export function bookableDates(ground, now = Date.now()) {
 }
 
 export function isPastSlot(ground, date, hour, now = Date.now()) {
+  return isPastStart(ground, date, hour * 60, now);
+}
+
+// A start time is past once that minute has begun.
+export function isPastStart(ground, date, startMin, now = Date.now()) {
   const n = localNow(ground.tz_offset_min, now);
-  return date < n.date || (date === n.date && hour <= n.hour);
+  return date < n.date || (date === n.date && startMin <= n.hour * 60 + n.minute);
+}
+
+// Checks a requested start and length against the ground's hours and step.
+// customer: true applies the 1-hour minimum, the ground's step and the maximum length.
+export function checkSpan(ground, start, dur, { customer = true } = {}) {
+  const step = customer ? ground.step_min || 60 : 30;
+  if (!Number.isInteger(start) || !Number.isInteger(dur)) throw bad('Pick a time');
+  if (start % step || dur % step) throw bad(step === 60 ? 'Bookings are in whole hours here' : 'Times go in 30-minute steps');
+  if (dur < (customer ? MIN_DUR : 30)) throw bad(customer ? 'The shortest booking is 1 hour' : 'Too short');
+  if (customer && dur > MAX_DUR) throw bad(`The longest booking online is ${MAX_DUR / 60} hours. Call the ground for longer.`);
+  if (start < ground.open_hour * 60 || start + dur > ground.close_hour * 60) throw bad('That time is outside opening hours');
+}
+
+// Half-hour indexes a booking covers: 6 PM for 90 minutes → 36, 37, 38.
+export function halvesOf(start, dur) {
+  const out = [];
+  for (let m = start; m < start + dur; m += 30) out.push(m / 30);
+  return out;
+}
+
+// Insert statements for the locks of one booking.
+export function lockStmts(db, groundId, date, start, dur, mask, token) {
+  const out = [];
+  for (const half of halvesOf(start, dur)) {
+    for (const cell of bitsOf(mask)) {
+      out.push(
+        db.prepare('INSERT INTO slot_locks (ground_id, date, half, cell, booking_token) VALUES (?,?,?,?,?)')
+          .bind(groundId, date, half, cell, token)
+      );
+    }
+  }
+  return out;
 }
 
 export function hoursOf(ground) {
@@ -60,52 +111,59 @@ export function hoursOf(ground) {
   return out;
 }
 
-async function takenCells(db, groundId, date) {
+async function takenHalves(db, groundId, date) {
   const { results } = await db
-    .prepare('SELECT hour, cell FROM slot_locks WHERE ground_id = ? AND date = ?')
+    .prepare('SELECT half, cell FROM slot_locks WHERE ground_id = ? AND date = ?')
     .bind(groundId, date)
     .all();
   const taken = {};
-  for (const r of results) taken[r.hour] = (taken[r.hour] || 0) | r.cell;
+  for (const r of results) taken[r.half] = (taken[r.half] || 0) | r.cell;
   return taken;
 }
 
-// Customer view of one day: every hour x unit is free, taken or past.
+// Customer view of one day.
+//   cells: every half hour x unit is free, taken or past (the time bar uses these).
+//   hours: the same by whole hour (taken if either half is), for older screens and tests.
 export async function availability(db, ground, units, date, now = Date.now()) {
-  const taken = await takenCells(db, ground.id, date);
-  return hoursOf(ground).map((hour) => ({
+  const taken = await takenHalves(db, ground.id, date);
+  const state = (u, half) =>
+    isPastStart(ground, date, half * 30, now) ? 'past' : (taken[half] || 0) & u.mask ? 'taken' : 'free';
+  const cells = [];
+  for (let half = ground.open_hour * 2; half < ground.close_hour * 2; half++) {
+    cells.push({ start: half * 30, label: minLabel(half * 30), units: Object.fromEntries(units.map((u) => [u.id, state(u, half)])) });
+  }
+  const hours = hoursOf(ground).map((hour) => ({
     hour,
     label: hourLabel(hour),
     units: Object.fromEntries(
-      units.map((u) => [
-        u.id,
-        isPastSlot(ground, date, hour, now) ? 'past' : (taken[hour] || 0) & u.mask ? 'taken' : 'free',
-      ])
+      units.map((u) => {
+        const a = state(u, hour * 2), b = state(u, hour * 2 + 1);
+        return [u.id, a === 'past' ? 'past' : a === 'taken' || b === 'taken' ? 'taken' : 'free'];
+      })
     ),
   }));
+  return { cells, hours };
 }
 
 // Insert a booking and lock its cells in one transaction. Throws 409 if any cell is taken.
 export async function insertBooking(db, b) {
   const token = randomToken();
+  const start = b.start ?? b.hour * 60;
+  const dur = b.dur ?? 60;
   const ref = randomRef();
   const stmts = [
     db
       .prepare(
-        `INSERT INTO bookings (token, ref, ground_id, unit_id, date, start_hour, mask, kind, status,
+        `INSERT INTO bookings (token, ref, ground_id, unit_id, date, start_hour, start_min, dur_min, mask, kind, status,
             customer_name, phone, amount, note, ip, hold_expires_at, created_at, decided_at, decided_by, paid_via)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .bind(
-        token, ref, b.groundId, b.unitId, b.date, b.hour, b.mask, b.kind, b.status,
+        token, ref, b.groundId, b.unitId, b.date, Math.floor(start / 60), start, dur, b.mask, b.kind, b.status,
         b.name || '', b.phone || '', b.amount || 0, b.note || '', b.ip || '',
         b.holdExpiresAt ?? null, b.now, b.decidedAt ?? null, b.decidedBy ?? null, b.paidVia ?? null
       ),
-    ...bitsOf(b.mask).map((cell) =>
-      db
-        .prepare('INSERT INTO slot_locks (ground_id, date, hour, cell, booking_token) VALUES (?,?,?,?,?)')
-        .bind(b.groundId, b.date, b.hour, cell, token)
-    ),
+    ...lockStmts(db, b.groundId, b.date, start, dur, b.mask, token),
   ];
   try {
     await db.batch(stmts);
@@ -143,8 +201,11 @@ export function publicBooking(b, units) {
     status: b.status,
     kind: b.kind,
     date: b.date,
-    hour: b.start_hour,
-    timeLabel: `${hourLabel(b.start_hour)} – ${hourLabel(b.start_hour + 1)}`,
+    hour: Math.floor(startOf(b) / 60),
+    start: startOf(b),
+    dur: durOf(b),
+    durLabel: durLabel(durOf(b)),
+    timeLabel: timeLabelOf(b),
     unit: unit ? { id: unit.id, name: unit.name, subtitle: unit.subtitle } : null,
     name: b.customer_name,
     phone: b.phone,

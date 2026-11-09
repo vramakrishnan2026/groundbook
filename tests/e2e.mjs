@@ -39,10 +39,14 @@ try {
   await expectText(c, 'Green Field Turf');
   await shot(c, 'customer-ground', true);
   await c.getByRole('button', { name: 'Check free slots' }).click();
-  await expectText(c, 'Pick a slot');
+  await expectText(c, 'Pick a time');
   await c.locator('.date').nth(1).click();          // tomorrow
   await c.getByRole('button', { name: /Full ground/ }).click();
   await c.getByRole('button', { name: '9 PM free' }).click();
+  await expectText(c, '1 hour');
+  await c.getByRole('button', { name: 'Longer' }).click();      // 9 – 11 PM
+  await expectText(c, '9 PM – 11 PM');
+  await expectText(c, '2 hours');
   await shot(c, 'customer-slots', true);
   await c.getByRole('button', { name: 'Continue' }).click();
   await expectText(c, 'Your details');
@@ -187,7 +191,7 @@ try {
   // old /g/ links forward to the short link; Settings shows the public address
   const old = await phone();
   await old.goto(`${base}/g/demo?step=slots`);
-  await expectText(old, 'Pick a slot');
+  await expectText(old, 'Pick a time');
   if (!/\/demo\?step=slots/.test(old.url())) problems.push('old /g/ link did not forward: ' + old.url());
   await o.goto(`${base}/owner/settings`);
   await expectText(o, 'https://book.goarena.in/demo');
