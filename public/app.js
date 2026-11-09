@@ -446,7 +446,7 @@ async function customerSlots(slug, data, q) {
         ${visible.length ? h`
         <div class="tbar-wrap" id="tbar"><div class="tbar" style="--w:${W}px">
           <div class="tbar-labels">${visible.map((b) => h`<span>${firstHourAt(b) ? minLabel(b.start).replace(' ', ' ') : ''}</span>`)}</div>
-          <div class="tbar-cells">${visible.map((b, i) => h`<button class="tb ${b.state} ${runEdges(i)}" data-act="pick" data-start="${b.start}" ${b.state !== 'free' ? raw('disabled') : ''} aria-label="${minLabel(b.start)} ${b.state === 'free' ? 'free' : 'booked'}"></button>`)}</div>
+          <div class="tbar-cells">${visible.map((b, i) => h`<button class="tb ${b.state} ${runEdges(i)}" data-act="pick" data-start="${b.start}" ${b.state !== 'free' ? raw('disabled') : ''} aria-label="${minLabel(b.start)} ${b.state === 'free' ? 'free' : 'booked'}">${b.state === 'free' ? raw('<i class="pick"></i>') : ''}</button>`)}</div>
         </div></div>
         <div class="legend"><span><i class="lg-free"></i>Free</span><span><i class="lg-sel"></i>Your booking</span><span><i class="lg-taken"></i>Booked</span></div>
         <div class="dur ${start === null ? 'hidden' : ''}" id="dur">

@@ -459,14 +459,19 @@ form[data-form=recheck] .btn { white-space: nowrap; flex: none; }
 .tb.run { height: 46px; cursor: pointer; background: linear-gradient(90deg, #43b56a 0 50%, #3aa860 50% 100%);
   border-right: 1.5px solid rgba(255,255,255,.75); box-shadow: inset 0 3px 0 #2c8a50, inset 0 -3px 0 #2c8a50; }
 .tb.run:hover { filter: brightness(1.06); }
-.tb.run.sel { background: linear-gradient(180deg, #fde047, #f59e0b); border-right-color: rgba(255,255,255,.6); }
-.tb.run.edge-l { border-radius: 23px 0 0 23px; box-shadow: inset 0 3px 0 #2c8a50, inset 0 -3px 0 #2c8a50, inset 3px 0 0 #2c8a50; }
-.tb.run.edge-r { border-radius: 0 23px 23px 0; border-right: 0; box-shadow: inset 0 3px 0 #2c8a50, inset 0 -3px 0 #2c8a50, inset -3px 0 0 #2c8a50; }
-.tb.run.edge-l.edge-r { border-radius: 23px; box-shadow: inset 0 0 0 3px #2c8a50; }
+/* pitch ends are straight, like a goal line (just a hint of a corner) */
+.tb.run.edge-l { border-radius: 4px 0 0 4px; box-shadow: inset 0 3px 0 #2c8a50, inset 0 -3px 0 #2c8a50, inset 3px 0 0 #2c8a50; }
+.tb.run.edge-r { border-radius: 0 4px 4px 0; border-right: 0; box-shadow: inset 0 3px 0 #2c8a50, inset 0 -3px 0 #2c8a50, inset -3px 0 0 #2c8a50; }
+.tb.run.edge-l.edge-r { border-radius: 4px; box-shadow: inset 0 0 0 3px #2c8a50; }
 /* goal-area arcs at both ends of each pitch */
-.tb.run.edge-l::before, .tb.run.edge-r::after { content: ''; position: absolute; top: 50%; width: 11px; height: 20px; border: 1.5px solid rgba(255,255,255,.85); transform: translateY(-50%); pointer-events: none; }
+.tb.run.edge-l::before, .tb.run.edge-r::after { content: ''; position: absolute; z-index: 0; top: 50%; width: 11px; height: 20px; border: 1.5px solid rgba(255,255,255,.85); transform: translateY(-50%); pointer-events: none; }
 .tb.run.edge-l::before { left: 3px; border-left: 0; border-radius: 0 11px 11px 0; }
 .tb.run.edge-r::after { right: 3px; border-right: 0; border-radius: 11px 0 0 11px; }
+/* the customer's pick: a rounded yellow pill laid on the turf, running across the blocks */
+.tb .pick { position: absolute; z-index: 1; top: 7px; bottom: 7px; left: 0; right: -1.5px; display: none; background: linear-gradient(180deg, #fde047, #f59e0b); box-shadow: 0 2px 6px -2px rgba(120,70,0,.45); pointer-events: none; }
+.tb.sel .pick { display: block; }
+.tb.sel-first .pick { left: 5px; border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
+.tb.sel-last .pick { right: 5px; border-top-right-radius: 999px; border-bottom-right-radius: 999px; }
 /* booked or closed: a low grey strip, with space either side so the break is obvious */
 .tb.gap { height: 28px; cursor: default; background: repeating-linear-gradient(135deg, #d3d9d6 0 5px, #e4e8e6 5px 10px); }
 .tb.gap.edge-l { margin-left: 5px; width: calc(var(--w) - 5px); border-radius: 10px 0 0 10px; }
