@@ -19,25 +19,23 @@ Database change: `migrations/0011_sports.sql` adds `units.sport` (default `footb
 grounds keep working unchanged.
 
 ## Try it without touching production
-The live site and its database are untouched. The sandbox is a second Worker with its own database.
+The sandbox is a second Worker (`groundbook-sandbox`) with its own database (`groundbook-sandbox`).
+book.goarena.in and its bookings are never touched. All set up in the Cloudflare dashboard:
 
-1. Create the sandbox database (once):
-   `npx wrangler d1 create groundbook-sandbox` and paste the printed `database_id` into
-   `wrangler.toml` under `[env.sandbox]`.
-2. Create tables and deploy the branch:
-   ```
-   git checkout multi-sport
-   npx wrangler d1 migrations apply groundbook-sandbox --env sandbox --remote
-   npx wrangler deploy --env sandbox
-   ```
-   It goes live at `https://groundbook-sandbox.<your-subdomain>.workers.dev`.
-3. Add a test ground with owner phone + PIN login (Google login is off in the sandbox):
-   ```
-   node scripts/new-ground.mjs --slug demo --name "Sandbox Turf" --owner Test --phone 9847012345 \
-     --pin 1234 --full 1200,1500 --half 700,900 > sandbox-ground.sql
-   npx wrangler d1 execute groundbook-sandbox --env sandbox --remote --file sandbox-ground.sql
-   ```
-   Then log in at `/login`, open Settings → Sports, switch on Box cricket and pick badminton courts.
+1. **Storage & databases → D1 → Create database**, name `groundbook-sandbox`. Copy its Database ID
+   into `wrangler.toml` under `[env.sandbox]` (replacing `PASTE-SANDBOX-DATABASE-ID-HERE`) on this branch.
+2. **Workers & Pages → Create → Import a repository** → `groundbook`, Worker name `groundbook-sandbox`.
+   - Production branch: `multi-sport`
+   - Deploy command:
+     ```
+     npx wrangler d1 migrations apply groundbook-sandbox --env sandbox --remote && npx wrangler d1 execute groundbook-sandbox --env sandbox --remote --file scripts/sandbox-seed.sql && npx wrangler deploy --env sandbox
+     ```
+3. Open `https://groundbook-sandbox.<your-subdomain>.workers.dev/sandbox`. The test ground has football,
+   box cricket and 3 badminton courts. Owner login at `/login`: phone 9847012345, PIN 1234
+   (Google login is off in the sandbox).
+
+Every push to `multi-sport` redeploys the sandbox. `scripts/sandbox-seed.sql` only adds the test
+ground if it's missing, so test bookings survive redeploys.
 
 Locally (no Cloudflare): `npm run dev` → http://localhost:8787/demo, owner login 9847012345 / 1234.
 
