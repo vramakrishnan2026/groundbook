@@ -1,0 +1,30 @@
+<html><head><style>
+@font-face{font-family:MI;src:url(MontIt.ttf);font-weight:100 900;font-style:italic}
+body{margin:0;background:transparent}
+.word{position:relative;display:inline-flex;align-items:baseline;font:italic 900 300px MI;letter-spacing:-8px;line-height:1;padding:110px 80px 90px 520px;white-space:nowrap}
+.word span{position:relative;z-index:2;filter:drop-shadow(6px 0 10px rgba(3,20,12,.55))}
+.gold{background:linear-gradient(180deg,#ffe680,#f59e0b);-webkit-background-clip:text;color:transparent;padding-right:24px}
+.o{display:inline-block;width:222px;height:222px;margin:0 8px 0 4px}
+.fx{position:absolute;pointer-events:none}.flames{z-index:1}.ballimg{z-index:4;filter:drop-shadow(0 14px 18px rgba(0,0,0,.45)) drop-shadow(0 0 26px rgba(255,160,40,.55))}
+</style></head><body>
+<div id="dark" style="display:inline-block;background:radial-gradient(circle at 40% 50%,#0f5a30,#03140c 70%)"><div class="word" style="color:#fff"><span>G</span><span class="o"></span><span class="gold">Arena</span></div></div><br>
+<div id="trans" style="display:inline-block"><div class="word" style="color:#fff"><span>G</span><span class="o"></span><span class="gold">Arena</span></div></div><br>
+<div id="transl" style="display:inline-block"><div class="word" data-light="1" style="color:#0b1a12"><span>G</span><span class="o"></span><span style="background:linear-gradient(180deg,#1fb85a,#0b6a32);-webkit-background-clip:text;color:transparent;padding-right:24px">Arena</span></div></div><br>
+<div id="light" style="display:inline-block;background:#fff"><div class="word" data-light="1" style="color:#0b1a12"><span>G</span><span class="o"></span><span style="background:linear-gradient(180deg,#1fb85a,#0b6a32);-webkit-background-clip:text;color:transparent;padding-right:24px">Arena</span></div></div>
+<script>
+// place the flaming-ball image so the ball fills each ".o" slot; its trail runs back behind the G
+document.fonts.ready.then(() => {
+  for (const w of document.querySelectorAll('.word')) {
+    const o = w.querySelector('.o'), wr = w.getBoundingClientRect(), r = o.getBoundingClientRect();
+    const D = r.width, S = D * 1400 / 760;
+    const cx = r.left - wr.left + D / 2, cy = r.top - wr.top + D / 2 + 50;
+    const fl = document.createElement('img'); fl.src = 'fx-flames-only.png'; fl.className = 'fx flames';
+    Object.assign(fl.style, { width: S + 'px', height: S + 'px', left: (cx - S * 1150 / 1400) + 'px', top: (cy - S / 2) + 'px' });
+    if (w.dataset.light) fl.style.filter = 'saturate(1.5) contrast(1.1)';
+    const b = document.createElement('img'); b.src = 'ball-front.png'; b.className = 'fx ballimg';
+    Object.assign(b.style, { width: D + 'px', height: D + 'px', left: (cx - D / 2) + 'px', top: (cy - D / 2) + 'px' });
+    w.appendChild(fl); w.appendChild(b);
+  }
+  document.title = 'done';
+});
+</script></body></html>

@@ -1,0 +1,14 @@
+<html><head><style>
+@font-face{font-family:MontIt;src:url(assets/MontIt.ttf);font-weight:100 900;font-style:italic}
+body{margin:0}
+.stage{position:relative;width:1080px;height:1080px;overflow:hidden;background:radial-gradient(circle at 50% 45%,#0f4f2b,#020a06 72%)}
+</style></head><body>
+<div class="stage" id="sw"></div><div class="stage" id="sb"></div>
+<script src="sting.js"></script>
+<script>
+const P = new URLSearchParams(location.search);
+window.ready = document.fonts.load('900 italic 100px MontIt').then(() => Promise.all([...document.images].map(i => i.decode().catch(() => {})))).then(() => {
+  window.SW = makeSting(document.getElementById('sw'), { mode: 'word', width: 1080, height: 1080, size: 190 });
+  window.SB = makeSting(document.getElementById('sb'), { mode: 'badge', width: 1080, height: 1080, size: 400 });
+});
+</script></body></html>

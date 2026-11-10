@@ -1,0 +1,232 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:MontIt;src:url(assets/MontIt.ttf);font-weight:100 900;font-style:italic}
+@font-face{font-family:Anton;src:url(assets/Anton-Regular.ttf)}
+@font-face{font-family:Marker;src:url(assets/PermanentMarker-Regular.ttf)}
+@font-face{font-family:Barlow;font-weight:600;src:url(assets/BarlowCondensed-SemiBold.ttf)}
+@font-face{font-family:Barlow;font-weight:700;src:url(assets/BarlowCondensed-Bold.ttf)}
+@font-face{font-family:Barlow;font-weight:800;src:url(assets/BarlowCondensed-ExtraBold.ttf)}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1080px;height:1920px;overflow:hidden;background:#04140b}
+#v{position:relative;width:1080px;height:1920px;overflow:hidden;font-family:Barlow;color:#fff}
+.abs{position:absolute}
+.bg{position:absolute;inset:-60px;background-size:cover;background-position:center}
+.c{left:0;right:0;text-align:center}
+.anton{font-family:Anton;line-height:.92;letter-spacing:1px}
+.marker{font-family:Marker;line-height:1}
+.b8{font-weight:800}.b7{font-weight:700}
+.scene{position:absolute;inset:0;display:none}
+.phone{position:absolute;border-radius:64px;background:#0b0f0d;padding:16px;box-shadow:0 50px 120px rgba(0,0,0,.6),0 0 0 3px #2a3a31 inset}
+.phone .scr{position:relative;width:100%;height:100%;border-radius:50px;overflow:hidden;background:#fff}
+.phone .scr img{position:absolute;left:0;top:0;width:100%;display:block}
+.phone .notch{position:absolute;left:50%;top:30px;width:150px;height:36px;margin-left:-75px;border-radius:20px;background:#0b0f0d;z-index:3}
+.pill{background:#fff;color:#0b1f14;border-radius:999px;font-weight:800;white-space:nowrap}
+.gold{color:#f6c64a}.red{color:#ff4b4b}.lime{color:#b7f23a}
+.chip{display:inline-block;padding:14px 30px;border-radius:999px;border:3px solid rgba(255,255,255,.35);font-weight:700;font-size:44px;margin:0 8px}
+</style></head><body>
+<div id="v">
+  <div class="bg" id="bgA" style="background-image:url(assets/stadium.jpg)"></div>
+  <div class="bg" id="bgB" style="background-image:url(assets/ground.jpg)"></div>
+  <div class="abs" id="tint" style="inset:0"></div>
+  <div class="abs" id="vig" style="inset:0;background:radial-gradient(ellipse at 50% 45%,rgba(0,0,0,0) 35%,rgba(0,0,0,.7) 100%)"></div>
+
+  <!-- 1 hook: money lost per booking -->
+  <div class="scene" id="s1">
+    <div class="abs c anton" id="h1" style="top:250px;font-size:210px">₹1,200</div>
+    <div class="abs c b8" id="h2" style="top:470px;font-size:96px;letter-spacing:10px">BOOKING</div>
+    <div class="abs c anton red" id="h3" style="top:640px;font-size:300px;text-shadow:0 20px 60px rgba(0,0,0,.5)">−₹180</div>
+    <svg class="abs" style="left:0;top:0" width="1080" height="1920"><path id="hstrike" d="M150 820 C 400 780, 690 750, 940 700" fill="none" stroke="#f6c64a" stroke-width="60" stroke-linecap="round" filter="url(#rough)"/>
+      <defs><filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".04" numOctaves="3" seed="3"/><feDisplacementMap in="SourceGraphic" scale="22"/></filter></defs></svg>
+    <div class="abs c b7" id="h4" style="top:970px;font-size:84px">goes to the booking app.</div>
+    <div class="abs c" id="h5" style="top:1130px;font-size:0;line-height:1"><span class="anton hw" id="w1" style="font-size:150px;display:block;margin:0 auto;width:fit-content">EVERY.</span><span class="anton hw" id="w2" style="font-size:150px;display:block;margin:0 auto;width:fit-content">SINGLE.</span><span class="anton hw gold" id="w3" style="font-size:150px;display:block;margin:0 auto;width:fit-content">TIME.</span></div>
+    <div class="abs c b7" id="h6" style="top:1740px;font-size:44px;letter-spacing:2px;opacity:.7">Booking apps take around 10–15% + GST</div>
+  </div>
+
+  <!-- 2 your page -->
+  <div class="scene" id="s2">
+    <div class="abs anton" id="s2a" style="left:80px;top:170px;font-size:170px">YOUR GROUND.</div>
+    <div class="abs anton" id="s2b" style="left:80px;top:340px;font-size:170px">YOUR OWN</div>
+    <div class="abs anton gold" id="s2c" style="left:80px;top:510px;font-size:170px">BOOKING PAGE.</div>
+    <div class="phone" id="s2phone" style="left:250px;top:760px;width:580px;height:1180px"><div class="notch"></div><div class="scr"><img id="s2img" src="assets/c1-ground.png"></div></div>
+    <div class="abs pill" id="s2pill" style="left:120px;top:1600px;font-size:58px;padding:26px 44px;box-shadow:0 20px 50px rgba(0,0,0,.45)"><span style="opacity:.55">book.goarena.in/</span><span id="s2type"></span><span id="s2caret" style="color:#15803d">|</span></div>
+    <div class="abs" id="s2chip" style="right:70px;top:1000px;background:#f6c64a;color:#0b1f14;font-weight:800;font-size:46px;padding:18px 30px;border-radius:24px;box-shadow:0 20px 40px rgba(0,0,0,.4)">No app to download</div>
+  </div>
+
+  <!-- 3 booked in 30s -->
+  <div class="scene" id="s3">
+    <div class="abs c b8" id="s3a" style="top:150px;font-size:96px;letter-spacing:10px">BOOKED IN</div>
+    <div class="abs c anton gold" id="s3b" style="top:250px;font-size:190px">30 SECONDS</div>
+    <div class="phone" id="s3phone" style="left:250px;top:480px;width:580px;height:1250px"><div class="notch"></div>
+      <div class="scr" id="s3scr"><img id="s3i1" src="assets/c3-slots.png"><img id="s3i2" src="assets/c5-pay.png"><img id="s3i3" src="assets/c7-confirmed.png">
+        <div class="abs" id="tap" style="width:120px;height:120px;border-radius:50%;border:8px solid #15803d;background:rgba(21,128,61,.25)"></div></div></div>
+    <div class="abs" id="tick" style="left:390px;top:880px;width:300px;height:300px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 24px rgba(22,163,74,.3),0 30px 80px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center">
+      <svg width="170" height="170" viewBox="0 0 24 24"><path id="tickp" d="M4.5 12.5l5 5L19.5 7" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/></svg></div>
+    <div id="confetti"></div>
+    <div class="abs c" id="s3steps" style="top:1775px;font-size:0"><span class="chip" id="st1">Pick a slot</span><span class="chip" id="st2">Pay by UPI</span><span class="chip" id="st3">Confirmed</span></div>
+  </div>
+
+  <!-- 4 zero commission -->
+  <div class="scene" id="s4">
+    <div id="coins"></div>
+    <div class="abs c anton" id="s4n" style="top:400px;font-size:560px;z-index:2">15%</div>
+    <div class="abs c anton" id="s4a" style="top:1050px;font-size:190px;z-index:2">COMMISSION.</div>
+    <div class="abs c marker gold" id="s4b" style="top:1220px;font-size:200px;z-index:2">Ever.</div>
+    <div class="abs c b7" id="s4c" style="top:1520px;font-size:66px;z-index:2">Money goes straight to <span class="gold">your bank</span></div>
+    <div class="abs c b7" id="s4d" style="top:1610px;font-size:56px;z-index:2;opacity:.85">Your customers stay yours</div>
+  </div>
+
+  <!-- 5 end card -->
+  <div class="scene" id="s5">
+    <div class="abs" id="stingbox" style="left:0;top:120px;width:1080px;height:620px"></div>
+    <div class="abs c b7" id="e1" style="top:640px;font-size:70px;opacity:.95">Your ground's own booking page</div>
+    <div class="abs" id="btn" style="left:150px;top:800px;width:780px;height:170px;border-radius:999px;background:linear-gradient(135deg,#ffe08a,#f6c64a);color:#0b1f14;display:flex;align-items:center;justify-content:center;gap:26px;font-weight:800;font-size:68px;overflow:hidden;box-shadow:0 30px 70px rgba(246,198,74,.35)">
+      <svg width="74" height="74" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.2-8.5 2.2-6.3 0-11.6-4.1-13.5-9.8l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>
+      Sign up with Google<div class="abs" id="shine" style="top:-40px;width:120px;height:260px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);transform:rotate(20deg)"></div></div>
+    <div class="abs c anton" id="e2" style="top:1040px;font-size:104px">BOOK.GOARENA.IN/SIGNUP</div>
+    <div class="abs c b7" id="e3" style="top:1230px;font-size:50px;letter-spacing:6px;opacity:.7">OR TALK TO US</div>
+    <div class="abs" id="wa" style="left:140px;top:1320px;width:800px;height:160px;border-radius:999px;background:#25D366;color:#fff;display:flex;align-items:center;justify-content:center;gap:24px;font-weight:800;font-size:72px;box-shadow:0 30px 70px rgba(37,211,102,.35)">
+      <svg width="80" height="80" viewBox="0 0 32 32"><path fill="#fff" d="M16 3C9 3 3.4 8.6 3.4 15.5c0 2.4.7 4.7 1.9 6.6L3.3 29l7.1-1.9c1.8 1 3.8 1.5 5.6 1.5 7 0 12.6-5.6 12.6-12.6S23 3 16 3zm0 23.1c-1.8 0-3.6-.5-5.1-1.4l-.4-.2-4.2 1.1 1.1-4.1-.2-.4c-1-1.6-1.6-3.5-1.6-5.5C5.6 9.8 10.3 5.2 16 5.2s10.4 4.6 10.4 10.4S21.7 26.1 16 26.1zm5.7-7.8c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.3-.5-2.5-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.6c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-1-2.3c-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3z"/></svg>
+      +91 98863 04904</div>
+    <div class="abs c b7" id="e4" style="top:1590px;font-size:56px;letter-spacing:3px;opacity:.85">ZERO COMMISSION · SMALL FLAT MONTHLY FEE</div>
+  </div>
+
+  <svg class="abs" id="wipe" style="left:0;top:0;pointer-events:none" width="1080" height="1920" viewBox="0 0 1080 1920"><g id="wipeg"></g></svg>
+</div>
+<script src="sting.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const p = (t, a, b) => clamp((t - a) / (b - a));            // progress 0..1 between a and b
+const eo = (x) => 1 - (1 - x) ** 3;                          // ease out
+const eio = (x) => x < .5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const back = (x) => { const c = 1.9; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+const lerp = (a, b, x) => a + (b - a) * x;
+const css = (el, o) => Object.assign((typeof el === 'string' ? $(el) : el).style, o);
+const T = (x = 0, y = 0, s = 1, r = 0) => `translate(${x}px,${y}px) scale(${s}) rotate(${r}deg)`;
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+
+// scene windows (seconds)
+const S = { s1: [0, 4.52], s2: [4.5, 9.52], s3: [9.5, 15.02], s4: [15, 18.52], s5: [18.5, 25.01] };
+
+// --- paint wipe: a fat brush stroke that sweeps across and off
+const wr = rng(11); const wipePaths = [];
+for (let k = 0; k < 7; k++) {
+  const y = -200 + k * 360, pts = [];
+  for (let i = 0; i <= 24; i++) { const x = -300 + i * 70; pts.push([x, y + Math.sin(i * .7 + k) * 30 + (wr() - .5) * 40]); }
+  const w = 420;
+  const d = 'M' + pts.map(([x, yy]) => `${x} ${yy - w / 2 + (wr() - .5) * 60}`).join('L') + 'L' + pts.reverse().map(([x, yy]) => `${x} ${yy + w / 2 + (wr() - .5) * 60}`).join('L') + 'Z';
+  wipePaths.push(d);
+}
+function wipe(t, at, color) { // covers by `at`, uncovers after it
+  const g = $('wipeg');
+  const a = p(t, at - .3, at), b = p(t, at, at + .32);
+  if (a <= 0 || b >= 1) { g.innerHTML = ''; return; }
+  g.innerHTML = wipePaths.map((d, k) => {
+    const delay = k * .04, x = a < 1 ? lerp(-1700, 0, eio(clamp(a * 1.25 - delay))) : lerp(0, 1700, eio(clamp(b * 1.25 - delay)));
+    return `<path d="${d}" fill="${color}" transform="translate(${x} 0) rotate(-12 540 960)"/>`;
+  }).join('');
+}
+function wipes(t) {
+  if (t < 5.1) return wipe(t, 4.5, '#f6c64a');
+  if (t < 10.1) return wipe(t, 9.5, '#16a34a');
+  if (t < 15.6) return wipe(t, 15, '#f6c64a');
+  return wipe(t, 18.5, '#16a34a');
+}
+
+// --- confetti and coins (fixed random sets)
+const cr = rng(5), CONF = Array.from({ length: 70 }, () => ({ a: cr() * Math.PI * 2, v: 700 + cr() * 900, r: cr() * 360, c: ['#f6c64a', '#16a34a', '#fff', '#b7f23a', '#ff4b4b'][Math.floor(cr() * 5)], w: 16 + cr() * 22 }));
+$('confetti').innerHTML = CONF.map((_, i) => `<div class="abs" id="cf${i}" style="width:${_.w}px;height:${_.w * .45}px;background:${_.c};border-radius:3px"></div>`).join('');
+const kr = rng(9), COINS = Array.from({ length: 14 }, (_, i) => ({ x: i % 2 ? 60 + kr() * 260 : 760 + kr() * 260, d: kr() * .9, v: 1500 + kr() * 900, s: .6 + kr() * .7, r: (kr() - .5) * 720 }));
+$('coins').innerHTML = COINS.map((_, i) => `<div class="abs" id="co${i}" style="width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff2b8,#f6c64a 45%,#b8860b);color:#7a5200;font-family:Anton;font-size:72px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(0,0,0,.4)">₹</div>`).join('');
+
+function frame(t) {
+  for (const [id, [a, b]] of Object.entries(S)) $(id).style.display = t >= a && t < b ? 'block' : 'none';
+  const mid = t >= 4.5 && t < 18.5;
+  css('bgA', { opacity: mid ? 0 : 1, transform: `scale(${1.08 + t * .008})` });
+  css('bgB', { opacity: mid ? 1 : 0, transform: `scale(${1.1 + t * .006}) translateX(${-t * 3}px)`, filter: 'saturate(1.2)' });
+  css('tint', { background: t < 4.5 ? 'rgba(8,4,4,.80)' : t < 9.5 ? 'rgba(3,22,12,.72)' : t < 15 ? 'rgba(3,22,12,.82)' : t < 18.5 ? 'rgba(10,12,6,.84)' : 'rgba(2,24,13,.86)' });
+
+  // 1 hook: on screen from the first frame
+  if (t < 4.52) {
+    css('h1', { transform: T(0, 0, lerp(1.12, 1, eo(p(t, 0, .4)))) });
+    css('h2', { transform: T(0, 0, lerp(1.12, 1, eo(p(t, 0, .4)))) });
+    const sb = back(p(t, .45, .8)), shake = t > .8 && t < 1.15 ? Math.sin(t * 90) * 14 * (1 - p(t, .8, 1.15)) : 0;
+    css('h3', { transform: T(shake, 0, lerp(2.4, 1, sb)), opacity: p(t, .45, .55), color: t > 3.75 ? '#7a2b2b' : '#ff4b4b' });
+    css('h4', { transform: T(0, lerp(80, 0, eo(p(t, 1.0, 1.3)))), opacity: p(t, 1.0, 1.2) });
+    ['w1', 'w2', 'w3'].forEach((id, i) => { const a = 1.9 + i * .38; css(id, { transform: T(0, 0, lerp(2.2, 1, back(p(t, a, a + .25)))), opacity: p(t, a, a + .06) }); });
+    css('h6', { opacity: p(t, 3.0, 3.3) * .7 });
+    css('hstrike', { strokeDasharray: 900, strokeDashoffset: 900 * (1 - eo(p(t, 3.55, 3.85))) });
+  }
+  // 2 your page
+  if (t >= 4.5 && t < 9.52) {
+    ['s2a', 's2b', 's2c'].forEach((id, i) => { const q = eo(p(t, 4.75 + i * .16, 5.15 + i * .16)); css(id, { transform: T(lerp(-1200, 0, q)), opacity: q }); });
+    const ph = back(p(t, 5.2, 5.85));
+    css('s2phone', { transform: T(0, lerp(1100, 0, ph) + Math.sin(t * 2) * 10, 1, lerp(14, -5, ph)) });
+    css('s2img', { transform: `translateY(${-eio(p(t, 7.4, 8.6)) * 260}px)` });
+    const word = 'yourground', n = Math.round(clamp((t - 6.2) / .7) * word.length);
+    $('s2type').textContent = word.slice(0, n);
+    css('s2caret', { opacity: Math.floor(t * 4) % 2 ? 1 : 0 });
+    const pq = back(p(t, 5.9, 6.2));
+    css('s2pill', { transform: T(0, 0, lerp(.3, 1, pq), lerp(-8, -3, pq)), opacity: p(t, 5.9, 6.0) });
+    const cq = back(p(t, 7.1, 7.4));
+    css('s2chip', { transform: T(0, 0, lerp(.2, 1, cq), 6), opacity: p(t, 7.1, 7.2) });
+  }
+  // 3 booked in 30 seconds
+  if (t >= 9.5 && t < 15.02) {
+    css('s3a', { transform: T(0, lerp(-200, 0, eo(p(t, 9.7, 10.0)))), opacity: p(t, 9.7, 9.9) });
+    css('s3b', { transform: T(0, 0, lerp(1.8, 1, back(p(t, 9.85, 10.15)))), opacity: p(t, 9.85, 9.95) });
+    css('s3phone', { transform: T(0, lerp(1300, 0, eo(p(t, 9.75, 10.2)))) });
+    const k1 = eio(p(t, 11.5, 11.8)), k2 = eio(p(t, 12.8, 13.1));
+    css('s3i1', { transform: `translateX(${-k1 * 100}%) translateY(${-p(t, 10.4, 11.0) * 140}px)` });
+    css('s3i2', { transform: `translateX(${(1 - k1) * 100 - k2 * 100}%)` });
+    css('s3i3', { transform: `translateX(${(1 - k2) * 100}%)` });
+    const tapAt = (a, x, y) => { const q = p(t, a, a + .4); return q > 0 && q < 1 ? { left: x + 'px', top: y + 'px', opacity: 1 - q, transform: `scale(${.4 + q * 1.4})` } : null; };
+    css('tap', tapAt(11.05, 330, 780) || tapAt(12.35, 210, 1100) || { opacity: 0 });
+    ['st1', 'st2', 'st3'].forEach((id, i) => {
+      const on = i === 0 ? t < 11.65 : i === 1 ? t >= 11.65 && t < 12.95 : t >= 12.95;
+      css(id, { background: on ? '#f6c64a' : 'rgba(0,0,0,.35)', color: on ? '#0b1f14' : '#fff', borderColor: on ? '#f6c64a' : 'rgba(255,255,255,.35)', opacity: p(t, 10.2, 10.4) });
+    });
+    const tk = p(t, 13.3, 13.6);
+    css('tick', { transform: T(0, 0, tk > 0 ? back(tk) : 0), opacity: tk > 0 ? (1 - p(t, 14.4, 14.7)) : 0 });
+    css('tickp', { strokeDasharray: 1, strokeDashoffset: 1 - eo(p(t, 13.45, 13.7)) });
+    const cq = p(t, 13.4, 14.3);
+    CONF.forEach((c, i) => {
+      const dist = c.v * eo(cq), x = 540 + Math.cos(c.a) * dist, y = 1030 + Math.sin(c.a) * dist * .8 + 900 * cq * cq;
+      css('cf' + i, { left: x + 'px', top: y + 'px', transform: `rotate(${c.r + cq * 720}deg)`, opacity: cq > 0 && cq < 1 ? 1 : 0 });
+    });
+  }
+  // 4 zero commission
+  if (t >= 15 && t < 18.52) {
+    const roll = eio(p(t, 15.5, 16.5)), num = Math.round(lerp(15, 0, roll));
+    $('s4n').textContent = num + '%';
+    const pop = t > 16.5 ? back(p(t, 16.5, 16.75)) : 1;
+    const col = roll < 1 ? `rgb(${Math.round(lerp(255, 246, roll))},${Math.round(lerp(75, 198, roll))},${Math.round(lerp(75, 74, roll))})` : '#f6c64a';
+    css('s4n', { color: col, transform: T(0, 0, lerp(.4, 1, back(p(t, 15.15, 15.4))) * (t > 16.5 ? lerp(1.25, 1, pop) : 1)), opacity: p(t, 15.15, 15.25) });
+    css('s4a', { transform: T(0, lerp(150, 0, eo(p(t, 16.6, 16.85)))), opacity: p(t, 16.6, 16.75) });
+    css('s4b', { transform: T(0, 0, lerp(2, 1, back(p(t, 16.85, 17.1))), -6), opacity: p(t, 16.85, 16.95) });
+    css('s4c', { transform: T(0, lerp(60, 0, eo(p(t, 17.3, 17.55)))), opacity: p(t, 17.3, 17.5) });
+    css('s4d', { transform: T(0, lerp(60, 0, eo(p(t, 17.8, 18.05)))), opacity: p(t, 17.8, 18.0) * .85 });
+    COINS.forEach((c, i) => {
+      const q = p(t, 16.6 + c.d * .7, 18.6);
+      css('co' + i, { left: c.x - 60 + 'px', top: (1950 - c.v * eo(q) + 1400 * q * q) + 'px', transform: `scale(${c.s}) rotateY(${q * 900}deg) rotate(${c.r * q}deg)`, opacity: q > 0 ? 1 : 0 });
+    });
+  }
+  // 5 end card, held long enough to read and act on
+  if (t >= 18.5) {
+    window.STING ??= makeSting($('stingbox'), { mode: 'word', width: 1080, height: 620, cy: 330, size: 178, pad: .28 });
+    STING.frame(Math.max(0, t - 18.65));
+    css('e1', { transform: T(0, lerp(50, 0, eo(p(t, 21.25, 21.5)))), opacity: p(t, 21.25, 21.45) * .95 });
+    css('btn', { transform: T(0, 0, lerp(.6, 1, back(p(t, 21.45, 21.75)))), opacity: p(t, 21.45, 21.55) });
+    css('e2', { transform: T(0, lerp(60, 0, eo(p(t, 21.7, 21.95)))), opacity: p(t, 21.7, 21.9) });
+    css('e3', { opacity: p(t, 22.0, 22.2) * .7 });
+    css('wa', { transform: T(0, 0, lerp(.6, 1, back(p(t, 22.1, 22.4))) * (1 + Math.max(0, Math.sin((t - 23.2) * 4)) * .03 * (t > 23.2 ? 1 : 0))), opacity: p(t, 22.1, 22.2) });
+    css('e4', { opacity: p(t, 22.5, 22.8) * .85 });
+    const sh = t < 23.6 ? p(t, 22.8, 23.35) : p(t, 24.0, 24.55);
+    css('shine', { left: lerp(-200, 900, sh) + 'px' });
+  }
+  wipes(t);
+}
+window.frame = frame;
+window.ready = document.fonts.ready.then(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))));
+</script></body></html>
